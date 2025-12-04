@@ -47,3 +47,10 @@ export interface UserListResponse {
   users?: User[];
   error?: string;
 }
+
+// --- Configuration Types ---
+export interface AppConfig {
+  classCodes: string[];
+  instructors: string[];
+  units: string[];
+}

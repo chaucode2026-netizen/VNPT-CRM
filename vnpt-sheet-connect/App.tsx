@@ -1,35 +1,100 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Header } from './components/Header';
 import { ConfigPanel } from './components/ConfigPanel';
 import { Dashboard } from './components/Dashboard';
 import { LoginForm } from './components/LoginForm';
-import { fetchSheetNames, fetchSheetData, loginUser, getAllUsers } from './services/sheetService';
-import { SheetData, LoadingState, User } from './types';
+import { fetchSheetNames, fetchSheetData, loginUser, getAllUsers, fetchAppConfig } from './services/sheetService';
+import { SheetData, LoadingState, User, AppConfig } from './types';
 
 // Updated to the latest provided URL (D3/exec)
 const DEFAULT_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyILRT9suOh1oM76A8Ss3---Tv21ZMhritA9qiwJO9VL1sjL8ewtAEXttjCj2SkypD3/exec";
 
+// Keys for LocalStorage
+const LS_KEYS = {
+  USER: 'vnpt_user_v1',
+  SHEETS: 'vnpt_sheets_v1',
+  CONFIG: 'vnpt_config_v1' // New key for config cache
+};
+
 function App() {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  
+  // --- STATE WITH LOCAL STORAGE PERSISTENCE ---
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem(LS_KEYS.USER);
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+
+  // App Config State (Instructors, Units, ClassCodes)
+  const [appConfig, setAppConfig] = useState<AppConfig>(() => {
+    try {
+        const saved = localStorage.getItem(LS_KEYS.CONFIG);
+        return saved ? JSON.parse(saved) : { classCodes: [], instructors: [], units: [] };
+    } catch { return { classCodes: [], instructors: [], units: [] }; }
+  });
+
   // App States
   const [loadingState, setLoadingState] = useState<LoadingState>(LoadingState.IDLE);
+  const [isRefreshing, setIsRefreshing] = useState(false); // Silent refresh state
   const [scriptUrl, setScriptUrl] = useState<string>(DEFAULT_SCRIPT_URL);
-  const [sheetNames, setSheetNames] = useState<string[]>([]);
+  
+  const [sheetNames, setSheetNames] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(LS_KEYS.SHEETS);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+
+  // Data Cache: Stores loaded data for each sheet { "BC T05": {headers:..., rows:...} }
+  const sheetCache = useRef<Record<string, SheetData>>({});
+
   const [currentSheetData, setCurrentSheetData] = useState<SheetData>({ headers: [], rows: [] });
+  const [selectedSheetName, setSelectedSheetName] = useState<string>('');
+
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>('home'); 
-  const [selectedSheetName, setSelectedSheetName] = useState<string>('');
   const [spreadsheetUrl, setSpreadsheetUrl] = useState<string>('');
   const [pendingCount, setPendingCount] = useState(0);
+
+  // --- PERSISTENCE EFFECTS ---
+  useEffect(() => {
+    if (currentUser) localStorage.setItem(LS_KEYS.USER, JSON.stringify(currentUser));
+    else localStorage.removeItem(LS_KEYS.USER);
+  }, [currentUser]);
+
+  useEffect(() => {
+    localStorage.setItem(LS_KEYS.SHEETS, JSON.stringify(sheetNames));
+  }, [sheetNames]);
+
+  useEffect(() => {
+      localStorage.setItem(LS_KEYS.CONFIG, JSON.stringify(appConfig));
+  }, [appConfig]);
+
+  // --- AUTO REFRESH (2 Minutes) ---
+  useEffect(() => {
+    if (!currentUser || !scriptUrl) return;
+
+    // Fetch config once on mount if empty
+    if (appConfig.instructors.length === 0) {
+        loadAppConfig();
+    }
+
+    const interval = setInterval(() => {
+      console.log("Auto refreshing data...");
+      handleRefresh(true); // Trigger silent refresh
+    }, 2 * 60 * 1000); // 2 minutes
+
+    return () => clearInterval(interval);
+  }, [currentUser, scriptUrl]); 
+
 
   // Check for notifications if Admin
   useEffect(() => {
     if (currentUser?.role === 'ADMIN' && scriptUrl) {
       checkNotifications();
     }
-  }, [currentUser, scriptUrl, activeTab]); // Re-check when tab changes in case of updates
+  }, [currentUser, scriptUrl, activeTab]);
 
   const checkNotifications = async () => {
     try {
@@ -41,27 +106,33 @@ function App() {
     }
   };
 
+  const loadAppConfig = async () => {
+      if (!scriptUrl) return;
+      try {
+          const config = await fetchAppConfig(scriptUrl);
+          setAppConfig(config);
+      } catch (e) {
+          console.error("Failed to load config", e);
+      }
+  };
+
   // --- LOGIN HANDLER ---
   const handleLogin = async (username: string, pass: string) => {
     setLoadingState(LoadingState.LOADING);
     setErrorMsg('');
     try {
-      // 1. Authenticate with GAS
       const user = await loginUser(scriptUrl, username, pass);
       setCurrentUser(user);
       
-      // 2. Fetch Initial Data immediately after login
+      // Fetch Initial Data & Config
       try {
-        const { sheetNames, spreadsheetUrl } = await fetchSheetNames(scriptUrl);
-        setSheetNames(sheetNames);
-        setSpreadsheetUrl(spreadsheetUrl || '');
+        const { sheetNames: names, spreadsheetUrl: url } = await fetchSheetNames(scriptUrl);
+        setSheetNames(names);
+        setSpreadsheetUrl(url || '');
+        await loadAppConfig();
         
-        // Auto load first sheet if exists
-        if (sheetNames.length > 0) {
-           await loadSheetData(scriptUrl, sheetNames[0]);
-        }
       } catch (e) {
-        console.warn("Could not fetch initial sheets", e);
+        console.warn("Could not fetch initial data", e);
       }
       
       setLoadingState(LoadingState.SUCCESS);
@@ -79,6 +150,9 @@ function App() {
     setCurrentUser(null);
     setSheetNames([]);
     setCurrentSheetData({ headers: [], rows: [] });
+    setSelectedSheetName('');
+    sheetCache.current = {}; // Clear cache
+    localStorage.clear(); 
     setActiveTab('home');
     setErrorMsg('');
     setLoadingState(LoadingState.IDLE);
@@ -86,34 +160,128 @@ function App() {
   };
 
   // --- DATA LOADING HANDLERS ---
-  const handleRefresh = async () => {
-    if (scriptUrl) {
-      const { sheetNames, spreadsheetUrl } = await fetchSheetNames(scriptUrl);
-      setSheetNames(sheetNames);
-      if (spreadsheetUrl) setSpreadsheetUrl(spreadsheetUrl);
+  
+  const handleRefresh = async (silent = false) => {
+    if (!scriptUrl) return;
+    
+    if (!silent) setLoadingState(LoadingState.LOADING);
+    else setIsRefreshing(true);
+
+    try {
+      // 1. Refresh Sheet List
+      const { sheetNames: names, spreadsheetUrl: url } = await fetchSheetNames(scriptUrl);
+      setSheetNames(names);
+      if (url) setSpreadsheetUrl(url);
       
+      // 2. Refresh Config
+      await loadAppConfig();
+
+      // 3. Refresh Current Sheet Data if selected
+      // Pass the NEW names list to avoid state update race conditions
       if (selectedSheetName) {
-        await loadSheetData(scriptUrl, selectedSheetName);
+         await loadSheetData(scriptUrl, selectedSheetName, !silent, true, names);
       }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      if (!silent) setLoadingState(LoadingState.IDLE);
+      setIsRefreshing(false);
     }
   };
 
-  const loadSheetData = async (url: string, sheetName: string) => {
+  const loadSheetData = async (
+      url: string, 
+      sheetName: string, 
+      showLoading = true, 
+      forceRefresh = false,
+      overrideSheetList?: string[] // Optional: Use this list if state hasn't updated yet
+  ) => {
+    if (!sheetName) return;
+
+    // Optimistically update selected name
     setSelectedSheetName(sheetName);
+
+    // --- LOGIC TẢI ĐỒNG THỜI (PARALLEL FETCHING) ---
+    // 1. Xác định các sheet liên quan (Siblings)
+    // Ví dụ: Chọn BC-T12 -> Cần tải cả BF-T12 và TH-T12
+    const currentList = overrideSheetList || sheetNames;
+    const match = sheetName.match(/-(T\d{1,2})$/); // Tìm đuôi -T12
+    let sheetsToFetch = [sheetName];
+
+    if (match) {
+        const suffix = match[0]; // "-T12"
+        // Tìm tất cả sheet có cùng đuôi tháng trong danh sách
+        const siblings = currentList.filter(s => s.endsWith(suffix) && s !== sheetName);
+        sheetsToFetch = [...sheetsToFetch, ...siblings];
+    }
+
+    // 2. Lọc ra những sheet cần tải (Chưa có trong cache hoặc bắt buộc tải lại)
+    const needed = forceRefresh 
+        ? sheetsToFetch 
+        : sheetsToFetch.filter(s => !sheetCache.current[s]);
+
+    // 3. Nếu sheet ĐÍCH đã có trong cache và không cần refresh, hiển thị ngay
+    if (!forceRefresh && sheetCache.current[sheetName]) {
+        console.log(`Loaded ${sheetName} from cache`);
+        setCurrentSheetData(sheetCache.current[sheetName]);
+        
+        // Nếu các sheet phụ chưa có, tải ngầm (background fetch)
+        const backgroundNeeded = sheetsToFetch.filter(s => !sheetCache.current[s]);
+        if (backgroundNeeded.length > 0) {
+            Promise.all(backgroundNeeded.map(name => fetchSheetData(url, name)))
+                .then(results => {
+                    results.forEach((data, i) => {
+                        sheetCache.current[backgroundNeeded[i]] = data;
+                    });
+                    console.log(`Background loaded siblings: ${backgroundNeeded.join(', ')}`);
+                })
+                .catch(err => console.error("Background fetch error", err));
+        }
+        return; 
+    }
+
+    // 4. TẢI DỮ LIỆU (Blocking)
+    // Nếu sheet đích chưa có, ta hiện loading và tải TẤT CẢ các sheet cần thiết cùng lúc
+    if (showLoading) setLoadingState(LoadingState.LOADING);
+    else setIsRefreshing(true);
+    
+    // Xóa dữ liệu cũ để hiện loading state (tránh hiển thị dữ liệu không khớp)
+    if (!forceRefresh) {
+        setCurrentSheetData({ headers: [], rows: [] });
+    }
+
     try {
-      const data = await fetchSheetData(url, sheetName);
-      setCurrentSheetData(data);
-      if (data.fileUrl) {
-        setSpreadsheetUrl(data.fileUrl);
+      console.log(`Fetching parallel: ${needed.join(', ')}`);
+      
+      // Thực hiện gọi API song song
+      await Promise.all(needed.map(async (name) => {
+          try {
+              const data = await fetchSheetData(url, name);
+              sheetCache.current[name] = data; // Lưu vào cache
+          } catch (err) {
+              console.error(`Error loading ${name}`, err);
+          }
+      }));
+      
+      // 5. Cập nhật UI cho sheet ĐÍCH
+      if (sheetCache.current[sheetName]) {
+        setCurrentSheetData(sheetCache.current[sheetName]);
+        if (sheetCache.current[sheetName].fileUrl) {
+          setSpreadsheetUrl(sheetCache.current[sheetName].fileUrl!);
+        }
       }
     } catch (error) {
       console.error(error);
+    } finally {
+      if (showLoading) setLoadingState(LoadingState.IDLE);
+      else setIsRefreshing(false);
     }
   };
 
   const handleSheetChange = async (sheetName: string) => {
     if (scriptUrl) {
-       await loadSheetData(scriptUrl, sheetName);
+       // When user switches tab, show loading spinner (showLoading=true) but allow cache (forceRefresh=false)
+       await loadSheetData(scriptUrl, sheetName, true, false);
     }
   };
   
@@ -123,7 +291,6 @@ function App() {
 
   const handleConfigUpdate = (url: string) => {
     setScriptUrl(url);
-    // handleRefresh();
   };
 
   // --- RENDER ---
@@ -150,10 +317,12 @@ function App() {
                 currentSheetName={selectedSheetName}
                 onSheetChange={handleSheetChange}
                 scriptUrl={scriptUrl}
-                onRefresh={handleRefresh}
+                onRefresh={() => handleRefresh(false)}
                 spreadsheetUrl={spreadsheetUrl}
                 onUrlUpdate={handleUrlUpdate}
                 user={currentUser}
+                isRefreshing={isRefreshing || loadingState === LoadingState.LOADING}
+                appConfig={appConfig}
               />
           );
 
@@ -162,13 +331,21 @@ function App() {
            return <div className="p-10 text-center text-red-500 font-bold">Bạn không có quyền truy cập khu vực này.</div>;
         }
         return (
-           <div className="p-8 max-w-6xl mx-auto">
-              <div className="flex items-center space-x-2 mb-6 text-gray-500">
-                <span>Trang chủ</span>
-                <span>/</span>
-                <span className="text-gray-800 font-medium">Cấu hình & User</span>
+           <div className="h-full overflow-y-auto bg-gray-50 custom-scrollbar">
+              <div className="p-8 max-w-6xl mx-auto pb-20">
+                  <div className="flex items-center space-x-2 mb-6 text-gray-500">
+                    <span>Trang chủ</span>
+                    <span>/</span>
+                    <span className="text-gray-800 font-medium">Cấu hình & User</span>
+                  </div>
+                  <ConfigPanel 
+                    scriptUrl={scriptUrl} 
+                    onUrlChange={handleConfigUpdate} 
+                    currentUser={currentUser}
+                    appConfig={appConfig}
+                    onConfigUpdate={setAppConfig}
+                  />
               </div>
-              <ConfigPanel scriptUrl={scriptUrl} onUrlChange={handleConfigUpdate} />
            </div>
         );
 

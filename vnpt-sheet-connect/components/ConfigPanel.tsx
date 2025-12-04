@@ -1,28 +1,38 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, UserRole, UserStatus } from '../types';
-import { getAllUsers, adminUpdateUser } from '../services/sheetService';
+import { User, UserRole, UserStatus, AppConfig } from '../types';
+import { getAllUsers, adminUpdateUser, saveAppConfig } from '../services/sheetService';
 
 interface ConfigPanelProps {
   scriptUrl: string;
   onUrlChange: (url: string) => void;
+  currentUser: User;
+  appConfig: AppConfig;
+  onConfigUpdate: (newConfig: AppConfig) => void;
 }
 
-export const ConfigPanel: React.FC<ConfigPanelProps> = ({ scriptUrl, onUrlChange }) => {
+export const ConfigPanel: React.FC<ConfigPanelProps> = ({ 
+    scriptUrl, onUrlChange, currentUser, appConfig, onConfigUpdate 
+}) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
+  // URL state retained but UI hidden
   const [url, setUrl] = useState(scriptUrl);
+  
+  // Config Editors State
+  const [configState, setConfigState] = useState<AppConfig>(appConfig);
+  const [savingConfig, setSavingConfig] = useState(false);
   
   // Modal States
   const [isAddOpen, setIsAddOpen] = useState(false);
-  const [editUser, setEditUser] = useState<User | null>(null); // For resetting password or editing
   const [newUser, setNewUser] = useState<User>({
       username: '', password: '', fullName: '', role: 'INSTRUCTOR', email: '', phone: '', address: '', status: 'ACTIVE'
   });
 
   useEffect(() => {
     loadUsers();
-  }, [scriptUrl]);
+    setConfigState(appConfig); // Sync local state with prop
+  }, [scriptUrl, appConfig]);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -71,21 +81,87 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ scriptUrl, onUrlChange
     } catch (e) { alert('Lỗi thêm user'); }
   };
 
+  // --- CONFIG HANDLERS ---
+  const handleConfigSave = async () => {
+    setSavingConfig(true);
+    try {
+        // Parse text areas back to arrays
+        const parsedConfig: AppConfig = {
+            classCodes: typeof configState.classCodes === 'string' ? (configState.classCodes as string).split('\n').filter((s: string) => s.trim()) : configState.classCodes,
+            instructors: typeof configState.instructors === 'string' ? (configState.instructors as string).split('\n').filter((s: string) => s.trim()) : configState.instructors,
+            units: typeof configState.units === 'string' ? (configState.units as string).split('\n').filter((s: string) => s.trim()) : configState.units,
+        };
+        
+        await saveAppConfig(scriptUrl, currentUser, parsedConfig);
+        onConfigUpdate(parsedConfig);
+        alert("Đã lưu cấu hình danh mục thành công!");
+    } catch (error) {
+        alert("Lỗi lưu cấu hình: " + error);
+    } finally {
+        setSavingConfig(false);
+    }
+  };
+
+  const handleTextAreaChange = (field: keyof AppConfig, value: string) => {
+      // Temporarily store as string for editing
+      setConfigState(prev => ({ ...prev, [field]: value }));
+  };
+
+  const arrayToString = (arr: string[] | string) => {
+      if (Array.isArray(arr)) return arr.join('\n');
+      return arr;
+  };
+
   return (
     <div className="space-y-8 animate-[fadeIn_0.3s]">
       
-      {/* 1. Connection Settings (Collapsible or Small) */}
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-        <details>
-            <summary className="text-sm font-bold text-gray-600 cursor-pointer mb-2">Cài đặt kết nối (URL Script)</summary>
-            <div className="flex gap-2 mt-2">
-                <input 
-                    className="flex-1 border p-2 rounded text-sm font-mono"
-                    value={url} onChange={e => setUrl(e.target.value)}
-                />
-                <button onClick={() => onUrlChange(url)} className="bg-vnpt-primary text-white px-4 py-1 rounded text-sm">Lưu</button>
-            </div>
-        </details>
+      {/* 1. DATA LIST CONFIGURATION */}
+      <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
+         <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+             <h2 className="text-lg font-bold text-vnpt-primary">Quản lý Danh Mục</h2>
+             <button 
+                onClick={handleConfigSave}
+                disabled={savingConfig}
+                className="bg-orange-600 text-white px-4 py-2 rounded text-sm font-bold hover:bg-orange-700 shadow"
+             >
+                 {savingConfig ? 'Đang lưu...' : 'Lưu Danh Mục'}
+             </button>
+         </div>
+         <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+             {/* Class Codes */}
+             <div>
+                 <label className="block text-sm font-bold text-gray-700 mb-2">Danh sách Mã Lớp</label>
+                 <p className="text-xs text-gray-400 mb-2">Mỗi dòng 1 mã</p>
+                 <textarea 
+                    rows={10}
+                    className="w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-vnpt-primary outline-none"
+                    value={arrayToString(configState.classCodes)}
+                    onChange={(e) => handleTextAreaChange('classCodes', e.target.value)}
+                 />
+             </div>
+             {/* Instructors */}
+             <div>
+                 <label className="block text-sm font-bold text-gray-700 mb-2">Danh sách Giảng Viên</label>
+                 <p className="text-xs text-gray-400 mb-2">Mỗi dòng 1 tên</p>
+                 <textarea 
+                    rows={10}
+                    className="w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-vnpt-primary outline-none"
+                    value={arrayToString(configState.instructors)}
+                    onChange={(e) => handleTextAreaChange('instructors', e.target.value)}
+                 />
+             </div>
+             {/* Units */}
+             <div>
+                 <label className="block text-sm font-bold text-gray-700 mb-2">Danh sách Đơn Vị</label>
+                 <p className="text-xs text-gray-400 mb-2">Mỗi dòng 1 đơn vị</p>
+                 <textarea 
+                    rows={10}
+                    className="w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-vnpt-primary outline-none"
+                    value={arrayToString(configState.units)}
+                    onChange={(e) => handleTextAreaChange('units', e.target.value)}
+                 />
+             </div>
+         </div>
       </div>
 
       {/* 2. User Management */}

@@ -13,7 +13,6 @@ interface LoginFormProps {
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, isLoading, error, currentUrl, onUrlChange }) => {
   const [isRegistering, setIsRegistering] = useState(false);
-  const [showConfig, setShowConfig] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   // Login State
@@ -50,7 +49,11 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, isLoading, error,
       // Reset form
       setRegData({ ...regData, username: '', password: '', fullName: '', email: '', phone: '', address: '' });
     } catch (err: any) {
-      setRegError(err.message || 'Đăng ký thất bại');
+      if (err.message === 'Invalid Action') {
+        setRegError('Lỗi Server: Backend chưa hỗ trợ đăng ký (Invalid Action). Hãy cập nhật Script.');
+      } else {
+        setRegError(err.message || 'Đăng ký thất bại');
+      }
     } finally {
       setRegLoading(false);
     }
@@ -58,158 +61,151 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin, isLoading, error,
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden border border-gray-200">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-gray-200">
         
-        {/* Header with Config Toggle */}
-        <div className="bg-vnpt-primary p-6 text-center relative">
+        {/* Header - Clean Look */}
+        <div className="bg-vnpt-primary p-8 text-center relative overflow-hidden">
            <div className="absolute inset-0 bg-blue-600 opacity-20 transform rotate-12 scale-150"></div>
-           <button 
-            onClick={() => setShowConfig(!showConfig)}
-            className="absolute top-4 right-4 text-blue-200 hover:text-white transition-colors z-20"
-          >
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-             </svg>
-          </button>
            <div className="relative z-10">
+            <div className="w-16 h-16 bg-white rounded-xl mx-auto mb-3 flex items-center justify-center shadow-lg text-vnpt-primary">
+               <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
+                 <path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z" />
+               </svg>
+            </div>
             <h2 className="text-2xl font-bold text-white uppercase tracking-wider">VNPT CRM</h2>
-            <p className="text-blue-100 text-sm mt-1">Hệ thống quản lý đào tạo</p>
+            <p className="text-blue-100 text-sm mt-1 font-medium">Hệ thống quản lý đào tạo</p>
           </div>
         </div>
 
-        {/* Config View */}
-        {showConfig && (
-          <div className="bg-gray-50 p-4 border-b border-gray-200">
-             <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Web App URL</label>
-             <textarea 
-                value={currentUrl}
-                onChange={(e) => onUrlChange(e.target.value)}
-                className="w-full text-xs p-2 border border-gray-300 rounded outline-none h-16"
-             />
-          </div>
-        )}
-
         {/* Tabs */}
-        <div className="flex border-b border-gray-200">
+        <div className="flex border-b border-gray-100">
           <button 
-            className={`flex-1 py-3 text-sm font-bold ${!isRegistering ? 'text-vnpt-primary border-b-2 border-vnpt-primary' : 'text-gray-500 hover:bg-gray-50'}`}
+            className={`flex-1 py-4 text-sm font-bold transition-colors ${!isRegistering ? 'text-vnpt-primary border-b-2 border-vnpt-primary bg-blue-50/50' : 'text-gray-400 hover:text-gray-600'}`}
             onClick={() => { setIsRegistering(false); setRegSuccess(false); }}
           >
-            Đăng Nhập
+            ĐĂNG NHẬP
           </button>
           <button 
-            className={`flex-1 py-3 text-sm font-bold ${isRegistering ? 'text-vnpt-primary border-b-2 border-vnpt-primary' : 'text-gray-500 hover:bg-gray-50'}`}
+            className={`flex-1 py-4 text-sm font-bold transition-colors ${isRegistering ? 'text-vnpt-primary border-b-2 border-vnpt-primary bg-blue-50/50' : 'text-gray-400 hover:text-gray-600'}`}
             onClick={() => setIsRegistering(true)}
           >
-            Đăng Ký
+            ĐĂNG KÝ
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6">
+        <div className="p-8">
           {isRegistering ? (
             /* --- REGISTER FORM --- */
             regSuccess ? (
               <div className="text-center py-6 animate-[fadeIn_0.5s]">
-                <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <h3 className="text-lg font-bold text-gray-800">Đăng ký thành công!</h3>
-                <p className="text-gray-600 text-sm mt-2">
-                  Tài khoản của bạn đang chờ Admin phê duyệt.<br/>Vui lòng quay lại sau.
+                <h3 className="text-xl font-bold text-gray-800 mb-2">Đăng ký thành công!</h3>
+                <p className="text-gray-600 text-sm mb-6 leading-relaxed">
+                  Tài khoản của bạn đã được gửi lên hệ thống và đang chờ Admin phê duyệt.
                 </p>
                 <button 
                   onClick={() => { setIsRegistering(false); setRegSuccess(false); }}
-                  className="mt-6 px-6 py-2 bg-vnpt-primary text-white rounded font-bold hover:bg-blue-700"
+                  className="w-full py-3 bg-vnpt-primary text-white rounded-lg font-bold hover:bg-blue-700 shadow-lg hover:shadow-xl transition-all"
                 >
                   Quay về Đăng nhập
                 </button>
               </div>
             ) : (
-              <form onSubmit={handleRegSubmit} className="space-y-4">
-                {regError && <div className="text-red-500 text-xs bg-red-50 p-2 rounded">{regError}</div>}
+              <form onSubmit={handleRegSubmit} className="space-y-4 animate-[fadeIn_0.3s]">
+                {regError && <div className="text-red-500 text-xs bg-red-50 p-3 rounded-lg border border-red-100 flex items-center"><span className="mr-2">⚠️</span>{regError}</div>}
                 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
-                    <label className="text-xs font-bold text-gray-600">Họ và tên</label>
-                    <input type="text" required className="w-full p-2 border rounded mt-1 text-sm" 
-                      value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} />
+                    <label className="text-xs font-bold text-gray-500 uppercase">Họ và tên</label>
+                    <input type="text" required className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-vnpt-primary focus:border-vnpt-primary outline-none text-sm transition-all" 
+                      value={regData.fullName} onChange={e => setRegData({...regData, fullName: e.target.value})} placeholder="Nguyễn Văn A" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-gray-600">Tên đăng nhập</label>
-                    <input type="text" required className="w-full p-2 border rounded mt-1 text-sm" 
-                       value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} />
+                    <label className="text-xs font-bold text-gray-500 uppercase">Tên đăng nhập</label>
+                    <input type="text" required className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-vnpt-primary focus:border-vnpt-primary outline-none text-sm transition-all" 
+                       value={regData.username} onChange={e => setRegData({...regData, username: e.target.value})} placeholder="user123" />
                   </div>
                    <div>
-                    <label className="text-xs font-bold text-gray-600">Mật khẩu</label>
-                    <input type="password" required className="w-full p-2 border rounded mt-1 text-sm" 
-                       value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} />
+                    <label className="text-xs font-bold text-gray-500 uppercase">Mật khẩu</label>
+                    <input type="password" required className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-vnpt-primary focus:border-vnpt-primary outline-none text-sm transition-all" 
+                       value={regData.password} onChange={e => setRegData({...regData, password: e.target.value})} placeholder="******" />
                   </div>
                   <div className="col-span-2">
-                    <label className="text-xs font-bold text-gray-600">Email</label>
-                    <input type="email" required className="w-full p-2 border rounded mt-1 text-sm" 
-                       value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} />
+                    <label className="text-xs font-bold text-gray-500 uppercase">Email</label>
+                    <input type="email" required className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-vnpt-primary focus:border-vnpt-primary outline-none text-sm transition-all" 
+                       value={regData.email} onChange={e => setRegData({...regData, email: e.target.value})} placeholder="email@vnpt.vn" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-gray-600">SĐT</label>
-                    <input type="text" required className="w-full p-2 border rounded mt-1 text-sm" 
-                       value={regData.phone} onChange={e => setRegData({...regData, phone: e.target.value})} />
+                    <label className="text-xs font-bold text-gray-500 uppercase">SĐT</label>
+                    <input type="text" required className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-vnpt-primary focus:border-vnpt-primary outline-none text-sm transition-all" 
+                       value={regData.phone} onChange={e => setRegData({...regData, phone: e.target.value})} placeholder="091xxxxxxx" />
                   </div>
                   <div>
-                    <label className="text-xs font-bold text-gray-600">Địa chỉ</label>
-                    <input type="text" className="w-full p-2 border rounded mt-1 text-sm" 
-                       value={regData.address} onChange={e => setRegData({...regData, address: e.target.value})} />
+                    <label className="text-xs font-bold text-gray-500 uppercase">Địa chỉ</label>
+                    <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-vnpt-primary focus:border-vnpt-primary outline-none text-sm transition-all" 
+                       value={regData.address} onChange={e => setRegData({...regData, address: e.target.value})} placeholder="Hà Nội" />
                   </div>
                 </div>
 
                 <button type="submit" disabled={regLoading}
-                  className={`w-full py-2.5 text-white font-bold rounded ${regLoading ? 'bg-gray-400' : 'bg-vnpt-primary hover:bg-blue-700'}`}>
-                  {regLoading ? 'Đang gửi...' : 'Gửi Đăng Ký'}
+                  className={`w-full py-3 text-white font-bold rounded-lg shadow-md transition-all mt-4
+                    ${regLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-vnpt-primary hover:bg-blue-700 hover:shadow-lg active:scale-95'}`}>
+                  {regLoading ? 'Đang xử lý...' : 'GỬI ĐĂNG KÝ'}
                 </button>
               </form>
             )
           ) : (
             /* --- LOGIN FORM --- */
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              {error && <div className="text-red-500 text-xs bg-red-50 p-2 rounded">{error}</div>}
+            <form onSubmit={handleLoginSubmit} className="space-y-6 animate-[fadeIn_0.3s]">
+              {error && <div className="text-red-500 text-xs bg-red-50 p-3 rounded-lg border border-red-100 flex items-start"><span className="mr-2 mt-0.5">⚠️</span><span>{error}</span></div>}
               
               <div>
-                <label className="text-xs font-bold text-gray-600">Tài khoản</label>
-                <div className="relative mt-1">
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Tài khoản</label>
+                <div className="relative">
                   <input 
                     type="text" required 
-                    className="w-full pl-9 p-2 border rounded text-sm focus:ring-1 focus:ring-vnpt-primary outline-none" 
-                    value={loginUser} onChange={e => setLoginUser(e.target.value)} placeholder="Username"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vnpt-primary focus:border-vnpt-primary outline-none text-sm transition-all" 
+                    value={loginUser} onChange={e => setLoginUser(e.target.value)} placeholder="Nhập tên đăng nhập"
                   />
-                   <svg className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                   <svg className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-gray-600">Mật khẩu</label>
-                <div className="relative mt-1">
+                <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Mật khẩu</label>
+                <div className="relative">
                   <input 
                     type={showPassword ? "text" : "password"} required 
-                    className="w-full pl-9 pr-9 p-2 border rounded text-sm focus:ring-1 focus:ring-vnpt-primary outline-none" 
-                    value={loginPass} onChange={e => setLoginPass(e.target.value)} placeholder="Password"
+                    className="w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-vnpt-primary focus:border-vnpt-primary outline-none text-sm transition-all" 
+                    value={loginPass} onChange={e => setLoginPass(e.target.value)} placeholder="Nhập mật khẩu"
                   />
-                  <svg className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600">
-                     {showPassword ? <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg> 
-                     : <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z" clipRule="evenodd" /><path d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.742L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.064 7 9.542 7 .847 0 1.669-.105 2.454-.303z" /></svg>}
+                  <svg className="w-5 h-5 text-gray-400 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 focus:outline-none">
+                     {showPassword ? <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z" /><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" /></svg> 
+                     : <svg className="w-5 h-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z" clipRule="evenodd" /><path d="M12.454 16.697L9.75 13.992a4 4 0 01-3.742-3.742L2.335 6.578A9.98 9.98 0 00.458 10c1.274 4.057 5.064 7 9.542 7 .847 0 1.669-.105 2.454-.303z" /></svg>}
                   </button>
                 </div>
               </div>
 
               <button type="submit" disabled={isLoading}
-                className={`w-full py-2.5 text-white font-bold rounded ${isLoading ? 'bg-gray-400' : 'bg-vnpt-primary hover:bg-blue-700'}`}>
+                className={`w-full py-3 text-white font-bold rounded-lg shadow-md transition-all uppercase tracking-wide
+                  ${isLoading ? 'bg-gray-400 cursor-not-allowed' : 'bg-vnpt-primary hover:bg-blue-700 hover:shadow-lg active:scale-95'}`}>
                 {isLoading ? 'Đang xác thực...' : 'ĐĂNG NHẬP'}
               </button>
             </form>
           )}
+        </div>
+        
+        {/* Footer */}
+        <div className="bg-gray-50 px-8 py-4 border-t border-gray-100 text-center">
+          <p className="text-xs text-gray-500">
+            Hỗ trợ kỹ thuật: <span className="text-vnpt-primary font-bold">1800 1091</span>
+          </p>
         </div>
       </div>
     </div>

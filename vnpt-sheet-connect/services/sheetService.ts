@@ -1,5 +1,5 @@
 
-import { SheetData, SheetRow, SheetListResponse, LoginResponse, User, UserListResponse } from '../types';
+import { SheetData, SheetRow, SheetListResponse, LoginResponse, User, UserListResponse, AppConfig } from '../types';
 
 // Helper for CORS headers
 const POST_HEADERS = {
@@ -187,6 +187,49 @@ export const createMonthSheets = async (scriptUrl: string, month: string): Promi
     return data;
   } catch (error) {
     console.error("Error creating sheets:", error);
+    throw error;
+  }
+};
+
+// --- CONFIG API ---
+
+export const fetchAppConfig = async (scriptUrl: string): Promise<AppConfig> => {
+  try {
+    const payload = JSON.stringify({ action: 'getConfig' });
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: POST_HEADERS,
+      body: payload
+    });
+    const data = await response.json();
+    if (data.config) {
+        return data.config;
+    }
+    // Fallback default
+    return { classCodes: [], instructors: [], units: [] };
+  } catch (error) {
+    console.error("Fetch Config error:", error);
+    return { classCodes: [], instructors: [], units: [] };
+  }
+};
+
+export const saveAppConfig = async (scriptUrl: string, user: User, config: AppConfig): Promise<boolean> => {
+  try {
+    const payload = JSON.stringify({
+      action: 'saveConfig',
+      user: user,
+      config: config
+    });
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: POST_HEADERS,
+      body: payload
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    return true;
+  } catch (error) {
+    console.error("Save Config error:", error);
     throw error;
   }
 };

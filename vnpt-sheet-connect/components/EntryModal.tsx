@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { SheetRow } from '../types';
+import { SheetRow, AppConfig } from '../types';
 
 interface EntryModalProps {
   isOpen: boolean;
@@ -7,16 +8,13 @@ interface EntryModalProps {
   onSubmit: (data: SheetRow) => Promise<void>;
   sheetName: string;
   nextStt: number; // Receive the next auto-calculated STT
+  appConfig: AppConfig;
 }
 
-// Mock Data Lists (In a real app, these could be fetched from another config sheet)
-const LIST_MA_LOP = ['VNPT-DAOTAO-01', 'VNPT-KDXM-02', 'VNPT-CSKH-03', 'VNPT-KYTHUAT-04'];
-const LIST_GV = ['Nguyễn Văn A', 'Trần Thị B', 'Lê Văn C', 'Phạm Thị D'];
-const LIST_DON_VI = ['TTKD', 'Viễn Thông', 'Khối VP', 'TT CNTT'];
 const LIST_HINH_THUC = ['Online', 'Offline'];
 const LIST_DTV = ['HH', 'M'];
 
-export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmit, sheetName, nextStt }) => {
+export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmit, sheetName, nextStt, appConfig }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState<SheetRow>({
     'STT': nextStt.toString(),
@@ -71,6 +69,11 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
 
   if (!isOpen) return null;
 
+  // Use config lists with fallbacks
+  const listMaLop = appConfig.classCodes.length ? appConfig.classCodes : ['VNPT-DEFAULT'];
+  const listGV = appConfig.instructors.length ? appConfig.instructors : ['Giảng viên mặc định'];
+  const listDonVi = appConfig.units.length ? appConfig.units : ['TTKD'];
+
   // Common input styles for dark mode
   const inputClass = "w-full px-3 py-2 border border-slate-600 bg-slate-700 text-white rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none text-sm placeholder-gray-400";
   const labelClass = "block text-xs font-bold text-gray-200 mb-1";
@@ -106,7 +109,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
               className={inputClass}
             >
               <option value="" className="bg-slate-700 text-gray-300">-- Chọn Mã Lớp --</option>
-              {LIST_MA_LOP.map(item => <option key={item} value={item} className="bg-slate-700 text-white">{item}</option>)}
+              {listMaLop.map(item => <option key={item} value={item} className="bg-slate-700 text-white">{item}</option>)}
             </select>
           </div>
 
@@ -165,7 +168,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
               className={inputClass}
             >
               <option value="" className="bg-slate-700">-- Chọn Giảng Viên --</option>
-              {LIST_GV.map(item => <option key={item} value={item} className="bg-slate-700">{item}</option>)}
+              {listGV.map(item => <option key={item} value={item} className="bg-slate-700">{item}</option>)}
             </select>
           </div>
 
@@ -198,7 +201,7 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
               className={inputClass}
             >
               <option value="" className="bg-slate-700">-- Chọn Đơn vị --</option>
-              {LIST_DON_VI.map(item => <option key={item} value={item} className="bg-slate-700">{item}</option>)}
+              {listDonVi.map(item => <option key={item} value={item} className="bg-slate-700">{item}</option>)}
             </select>
           </div>
 
