@@ -17,6 +17,8 @@ interface DashboardProps {
   user: User;
   isRefreshing?: boolean;
   appConfig: AppConfig;
+  getDataBySheetName: (name: string) => SheetData | undefined;
+  cacheVersion?: number; 
 }
 
 // Columns for Report view
@@ -27,7 +29,6 @@ const REPORT_COLUMNS = [
 ];
 
 // Definition for Statistics (TH) View
-// Updated keys to match the calculated object structure
 const TH_GROUPS = [
   { 
     title: 'ĐTV-M', 
@@ -64,9 +65,8 @@ const getDaysArray = (monthStr: string) => {
   });
 };
 
-type SheetCategory = 'BC' | 'BF' | 'TH';
+type SheetCategory = 'BC' | 'BF' | 'TH' | 'KH';
 
-// Helper to safely parse numbers from strings like "5", "5.5", "5,5", ""
 const parseVal = (val: any): number => {
   if (!val) return 0;
   if (typeof val === 'number') return val;
@@ -74,6 +74,8 @@ const parseVal = (val: any): number => {
   const num = parseFloat(str);
   return isNaN(num) ? 0 : num;
 };
+
+const normalize = (str: string | undefined) => (str || '').toString().trim().toLowerCase();
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
   data, 
@@ -86,7 +88,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onUrlUpdate,
   user,
   isRefreshing = false,
-  appConfig
+  appConfig,
+  getDataBySheetName,
+  cacheVersion = 0
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -97,12 +101,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   });
   
   const [activeCategory, setActiveCategory] = useState<SheetCategory>('BC');
+  const currentYear = new Date().getFullYear();
   
   // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false); // For BC (EntryModal)
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false); // For BF (LeaveModal)
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false); // For KH (Plan Modal)
   
   const [isCreating, setIsCreating] = useState(false);
+  const [updateTrigger, setUpdateTrigger] = useState(0); 
 
   // --- AUTO-SWITCH MONTH LOGIC ---
   useEffect(() => {
@@ -131,8 +138,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const monthPattern = selectedMonth.length === 1 ? `0${selectedMonth}` : selectedMonth;
     const suffix = `-T${monthPattern}`;
 
-    // CRITICAL CHANGE: When Active Category is 'TH' (Thống kê), we still want to load 'BC' (Báo cáo) data
-    // because we calculate statistics FROM the report data.
     const searchType = activeCategory === 'TH' ? 'BC' : activeCategory;
 
     return availableSheets.find(name => {
@@ -140,6 +145,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (!nameUpper.includes(suffix)) return false;
       if (searchType === 'BC') return nameUpper.includes('BC');
       if (searchType === 'BF') return nameUpper.includes('BF') || nameUpper.includes('BU');
+      if (searchType === 'KH') return nameUpper.includes('KH') || nameUpper.includes('KE'); 
       return false;
     });
   }, [availableSheets, selectedMonth, activeCategory]);
@@ -158,7 +164,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const statsMap: Record<string, any> = {};
 
     data.rows.forEach(row => {
-      // Normalize Instructor Name
       const gv = row['GV'] || row['Giảng Viên'];
       if (!gv) return;
       
@@ -166,7 +171,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (!statsMap[gvKey]) {
         statsMap[gvKey] = {
           'Giảng Viên': gvKey,
-          // Initialize all counters
           'M_91': 0, 'M_66': 0, 'M_60': 0, 'M_OL': 0, 'M_KN': 0, 'M_Coach': 0, 'M_Tong': 0,
           'HH_91': 0, 'HH_66': 0, 'HH_60': 0, 'HH_OL': 0, 'HH_KN': 0, 'HH_Coach': 0, 'HH_Tong': 0,
           'ALL_91': 0, 'ALL_66': 0, 'ALL_60': 0, 'ALL_OL': 0, 'ALL_KN': 0, 'ALL_Coach': 0, 
@@ -178,43 +182,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const isM = dtvRaw.includes('M');
       const isHH = dtvRaw.includes('HH');
 
-      // Metric columns to process
       const metrics = ['91', '66', '60', 'OL', 'KN', 'Coach'];
       
       let rowSumM = 0;
       let rowSumHH = 0;
       let rowSumALL = 0;
 
-      // Process standard metrics
       metrics.forEach(metric => {
         const val = parseVal(row[metric]);
-        
-        // Add to M group
-        if (isM) {
-          statsMap[gvKey][`M_${metric}`] += val;
-          rowSumM += val;
-        }
-        
-        // Add to HH group
-        if (isHH) {
-          statsMap[gvKey][`HH_${metric}`] += val;
-          rowSumHH += val;
-        }
-
-        // Add to ALL group (Includes both M and HH rows)
+        if (isM) { statsMap[gvKey][`M_${metric}`] += val; rowSumM += val; }
+        if (isHH) { statsMap[gvKey][`HH_${metric}`] += val; rowSumHH += val; }
         statsMap[gvKey][`ALL_${metric}`] += val;
         rowSumALL += val;
       });
 
-      // Update Group Totals
       if (isM) statsMap[gvKey]['M_Tong'] += rowSumM;
       if (isHH) statsMap[gvKey]['HH_Tong'] += rowSumHH;
 
-      // Process Extra columns for ALL group only (OS, CT, HOC, HOP)
       const valOS = parseVal(row['OS']);
       const valCT = parseVal(row['CT']);
       const valHoc = parseVal(row['HOC']);
-      // Mapping: Họp = OKR + STL
       const valHop = parseVal(row['OKR']) + parseVal(row['STL']); 
 
       statsMap[gvKey]['ALL_OS'] += valOS;
@@ -222,13 +209,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       statsMap[gvKey]['ALL_Hoc'] += valHoc;
       statsMap[gvKey]['ALL_Hop'] += valHop;
 
-      // Grand Total for ALL (Metrics + Extras)
-      // Note: rowSumALL currently only has 91..Coach. We need to add the extras.
       rowSumALL += (valOS + valCT + valHoc + valHop);
       statsMap[gvKey]['ALL_Tong'] += rowSumALL;
     });
 
-    // Convert map to array and add STT
     return Object.values(statsMap).map((item: any, index) => ({
       ...item,
       'STT': (index + 1).toString()
@@ -236,27 +220,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   }, [data, activeCategory]);
 
-  // --- EXTRACT INSTRUCTORS FOR LEAVE MODAL (FROM CONFIG + DATA) ---
+  // --- EXTRACT INSTRUCTORS ---
   const instructorList = useMemo(() => {
-    // Merge config instructors with those in data (in case config changed but data remains)
     const fromConfig = appConfig.instructors || [];
     const fromData = data.rows ? [...new Set(data.rows.map(r => r['Giảng Viên'] || r['GV']).filter(Boolean))] : [];
-    
     return [...new Set([...fromConfig, ...fromData])].sort();
   }, [data, appConfig]);
 
 
   // --- HELPERS ---
   const canCreateMonth = user.role === 'ADMIN';
-  
-  // BC Add Button Condition
   const canAddBCData = (user.role === 'ADMIN' || user.role === 'LEADER') && activeCategory === 'BC' && !!targetSheetName;
-  
-  // BF Add Button Condition (New)
-  const canAddBFData = activeCategory === 'BF' && !!targetSheetName;
+  const canAddBFData = user.role === 'ADMIN' && activeCategory === 'BF' && !!targetSheetName;
+  const canAddKHData = user.role === 'ADMIN' && activeCategory === 'KH' && !!targetSheetName;
 
   const currentColumns = useMemo(() => {
-    if (activeCategory === 'BF') {
+    if (activeCategory === 'BF' || activeCategory === 'KH') {
       const days = selectedMonth ? getDaysArray(selectedMonth) : [];
       return ['STT', 'Giảng Viên', ...days];
     }
@@ -267,7 +246,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [activeCategory, selectedMonth]);
 
   const filteredRows = useMemo(() => {
-    // If Statistics mode, use calculated data
     if (activeCategory === 'TH') {
        if (!statisticsData) return [];
        return statisticsData.filter((row: any) => 
@@ -275,17 +253,149 @@ export const Dashboard: React.FC<DashboardProps> = ({
        );
     }
 
-    // Default BC/BF mode
+    // --- LOGIC GỘP DÒNG CHO BF VÀ KH ---
+    // Điều này đảm bảo mỗi giảng viên chỉ hiện 1 dòng duy nhất, gộp dữ liệu từ nhiều dòng trùng trong sheet
+    if (activeCategory === 'KH' || activeCategory === 'BF') {
+         // 1. Prepare Data Sources
+         const monthId = `T${selectedMonth.length === 1 ? `0${selectedMonth}` : selectedMonth}`;
+         
+         // Sibling Data (Only needed for KH mainly, but good to have)
+         const bfName = availableSheets.find(s => {
+             const upper = s.toUpperCase();
+             return (upper.includes('BF') || upper.includes('BU')) && upper.includes(monthId);
+         });
+         const bcName = availableSheets.find(s => {
+             const upper = s.toUpperCase();
+             return upper.includes('BC') && upper.includes(monthId);
+         });
+
+         const bfData = bfName ? getDataBySheetName(bfName) : undefined;
+         const bcData = bcName ? getDataBySheetName(bcName) : undefined;
+
+         // 2. Build Master List of Instructors (Config + Data)
+         const allInstructorsSet = new Set(appConfig.instructors || []);
+         // If we are in BF/KH, we should also show instructors present in the actual sheet data
+         if (data && data.rows) {
+             data.rows.forEach(r => {
+                 const name = r['Giảng Viên'] || r['GV'] || r['Họ và tên'];
+                 if (name) allInstructorsSet.add(name.trim());
+             });
+         }
+         const sortedInstructors = [...allInstructorsSet].sort();
+         const daysArray = getDaysArray(selectedMonth);
+
+         // 3. Map & Merge Loop
+         const calculatedRows = sortedInstructors.map((instructor, idx) => {
+            const rowObj: SheetRow = {
+              'STT': (idx + 1).toString(),
+              'Giảng Viên': instructor
+            };
+
+            // A. MERGE DUPLICATES FROM CURRENT SHEET (The "Pull Back" Fix)
+            // If the sheet has 2 rows for "Hạnh", we merge them here into `rowObj`
+            if (data && data.rows) {
+                const matches = data.rows.filter(r => {
+                    const rName = (r['Giảng Viên'] || r['GV'] || r['Họ và tên']) as string;
+                    return normalize(rName) === normalize(instructor);
+                });
+                // Combine all matches. Later values overwrite earlier ones for same keys, 
+                // but since these are day columns, they should ideally be distinct or we just take the last one.
+                matches.forEach(m => {
+                    Object.keys(m).forEach(key => {
+                        // Avoid overwriting identity keys, merge the rest (day columns)
+                        if (key !== 'STT' && key !== 'Giảng Viên' && key !== 'GV' && m[key]) {
+                            rowObj[key] = m[key] as string;
+                        }
+                    });
+                });
+            }
+
+            // B. SPECIFIC LOGIC FOR 'KH' (Plan) - Fetch from siblings
+            if (activeCategory === 'KH') {
+                daysArray.forEach(day => {
+                    // Only fill if empty (Manual Plan > Auto Data) or if we want to show suggestions
+                    // Here we follow the logic: If Manual Data exists (merged above), use it. 
+                    // If not, try to fetch from BF/BC.
+                    
+                    const dayKey = day;
+                    const dayNumKey = parseInt(day, 10).toString();
+                    
+                    if (!rowObj[day] && !rowObj[dayNumKey]) {
+                        let cellContent = '';
+
+                        // Check BF
+                        if (bfData && bfData.rows) {
+                             const bfRow = bfData.rows.find(r => {
+                                const rName = (r['Giảng Viên'] || r['GV'] || r['Họ và tên']) as string;
+                                return normalize(rName) === normalize(instructor);
+                             });
+                             if (bfRow) {
+                                 cellContent = (bfRow[dayKey] as string) || (bfRow[dayNumKey] as string) || '';
+                             }
+                        }
+
+                        // Check BC
+                        if (!cellContent && bcData && bcData.rows) {
+                             const matchingBC = bcData.rows.filter(r => {
+                                const rName = (r['Giảng Viên'] || r['GV']) as string;
+                                const rDate = r['Ngày'] as string;
+                                
+                                if (normalize(rName) !== normalize(instructor)) return false;
+                                if (!rDate) return false;
+
+                                const dateStr = rDate.toString().trim();
+                                const parts = dateStr.split(/[-/]/);
+                                if (parts.length >= 2) {
+                                    let d = 0, m = 0;
+                                    if (parts[0].length === 4) {
+                                       m = parseInt(parts[1], 10);
+                                       d = parseInt(parts[2], 10);
+                                    } else {
+                                       d = parseInt(parts[0], 10);
+                                       m = parseInt(parts[1], 10);
+                                    }
+                                    return d === parseInt(day, 10) && m === parseInt(selectedMonth, 10);
+                                }
+                                return false;
+                             });
+                             
+                             if (matchingBC.length > 0) {
+                                const lines = matchingBC.map(item => {
+                                   const maLop = (item['Mã Lớp'] || item['Nội dung'] || '?') as string;
+                                   const buoi = (item['Buổi'] || '') as string;
+                                   return `${maLop} - ${buoi}`;
+                                });
+                                cellContent = lines.join('\n');
+                             }
+                        }
+
+                        if (cellContent) {
+                            rowObj[day] = cellContent;
+                        }
+                    }
+                });
+            }
+            
+            return rowObj;
+         });
+
+         // Final Filter by Search
+         return calculatedRows.filter(row => 
+             row['Giảng Viên'].toLowerCase().includes(searchTerm.toLowerCase())
+         );
+    }
+
+    // Default Fallback (should ideally not be reached if categories cover all)
     if (!data || !data.rows) return [];
     return data.rows.filter(row => 
       Object.values(row).some((val) => 
         (val as string).toLowerCase().includes(searchTerm.toLowerCase())
       )
     );
-  }, [data, statisticsData, searchTerm, activeCategory]);
+  }, [data, statisticsData, searchTerm, activeCategory, targetSheetName, appConfig, updateTrigger, selectedMonth, availableSheets, getDataBySheetName, cacheVersion]);
 
   const getCellColor = (value: string, header: string) => {
-    if (activeCategory === 'BF') {
+    if (activeCategory === 'BF' || activeCategory === 'KH') {
         if (header !== 'STT' && header !== 'Giảng Viên') {
             const val = value?.toLowerCase().trim();
             if (val === 'p') return 'bg-yellow-100 font-bold text-yellow-700';
@@ -325,43 +435,80 @@ export const Dashboard: React.FC<DashboardProps> = ({
     if (!targetSheetName) return;
     await saveSheetRow(scriptUrl, targetSheetName, rowData);
     data.rows.push(rowData);
+    setUpdateTrigger(prev => prev + 1);
   };
 
-  // --- SAVE BF DATA (LEAVE/COMPENSATION) ---
-  const handleSaveLeave = async (dateStr: string, content: string, instructor: string) => {
+  // --- SAVE BF/KH DATA (STRICT UPSERT FIX) ---
+  const handleSaveMatrix = async (dateStr: string, content: string, instructor: string) => {
     if (!targetSheetName) return;
 
-    // 1. Extract Day (e.g., "2024-05-12" -> "12")
-    const day = dateStr.split('-')[2];
+    const headers = data.headers || [];
+
+    // 1. Resolve Date Key (e.g. "05" or "5")
+    const dayParts = dateStr.split('-');
+    const day = dayParts[2]; // "05"
+    const dayNum = parseInt(day, 10).toString(); // "5"
     
-    // 2. Construct Payload
-    // Note: We use the existing saveSheetRow which typically 'upserts' or 'appends'. 
-    // Since BF is a matrix, we ideally want to UPDATE a cell. 
-    // We send a payload that identifies the row ('Giảng Viên') and the column to update (day).
+    // Check if the header specifically contains "05" or "5" to decide which key to use
+    let dayKey = day;
+    if (headers.includes(day)) dayKey = day;
+    else if (headers.includes(dayNum)) dayKey = dayNum;
+
+    // 2. Resolve Instructor Key (CASE-INSENSITIVE MATCHING)
+    // Find the ACTUAL header string in the sheet (e.g., "GIẢNG VIÊN", "Giảng Viên", "GV", "Họ và tên")
+    // This exact string must be sent to the backend as `matchColumn` to find the row.
+    let instructorKey = 'Giảng Viên'; // Default fallback
+    
+    const foundHeader = headers.find(h => {
+        const lower = h.trim().toLowerCase();
+        return lower === 'giảng viên' || lower === 'gv' || lower === 'họ và tên';
+    });
+
+    if (foundHeader) {
+        instructorKey = foundHeader;
+    }
+
+    // 3. Local Update (Optimistic UI)
+    const normalize = (s: any) => String(s || '').trim().toLowerCase();
+    const targetName = normalize(instructor);
+
+    // Find existing row using the resolved key or fallbacks
+    const rowIndex = data.rows.findIndex(r => {
+        let rName = r[instructorKey];
+        if (!rName) rName = r['Giảng Viên'] || r['GV'] || r['Họ và tên'];
+        return normalize(rName) === targetName;
+    });
+
+    if (rowIndex >= 0) {
+        // UPDATE EXISTING ROW
+        data.rows[rowIndex] = {
+            ...data.rows[rowIndex],
+            [dayKey]: content,
+            [day]: content,      // Ensure both formats exist for renderer
+            [dayNum]: content
+        };
+    } else {
+        // INSERT NEW ROW
+        const newRow: SheetRow = {
+            'STT': (data.rows.length + 1).toString(),
+            [instructorKey]: instructor,
+            [dayKey]: content,
+            'Giảng Viên': instructor, // Normalized key for renderer
+            [day]: content
+        };
+        data.rows.push(newRow);
+    }
+
+    setUpdateTrigger(prev => prev + 1);
+
+    // 4. Send to Backend
     const rowData: SheetRow = {
-      'Giảng Viên': instructor,
-      [day]: content
+      [instructorKey]: instructor,
+      [dayKey]: content
     };
 
-    // 3. Send to Backend
-    await saveSheetRow(scriptUrl, targetSheetName, rowData);
-
-    // 4. Update Local State (Optimistic UI Update)
-    const rowIndex = data.rows.findIndex(r => (r['Giảng Viên'] === instructor || r['GV'] === instructor));
-    if (rowIndex >= 0) {
-      // Update existing row (Matrix style)
-      data.rows[rowIndex] = {
-        ...data.rows[rowIndex],
-        [day]: content
-      };
-    } else {
-      // Create new row (Unlikely if sheets are pre-populated, but safe fallback)
-      data.rows.push({
-        'STT': (data.rows.length + 1).toString(),
-        'Giảng Viên': instructor,
-        [day]: content
-      });
-    }
+    // Pass the EXACT `instructorKey` found in headers as `matchColumn`
+    await saveSheetRow(scriptUrl, targetSheetName, rowData, instructorKey);
   };
 
   const handleCreateMonth = async () => {
@@ -414,17 +561,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return (
       <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
         <tr>
-          {currentColumns.map((header, idx) => (
-            <th key={idx} className={`px-2 py-3 border border-gray-300 text-[11px] font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap text-center
-                ${header === 'STT' ? 'sticky left-0 bg-gray-100 z-30 border-r-2 border-r-gray-300 w-12' : ''}
-                ${(header === 'Giảng Viên' && activeCategory === 'BF') ? 'sticky left-12 bg-gray-100 z-30 border-r-2 border-r-gray-300 min-w-[180px] text-left px-4' : ''}
-                ${header === 'Mã Lớp' ? 'min-w-[100px]' : ''}
-                ${header === 'Nội dung' ? 'min-w-[250px] text-left px-3' : ''}
-                ${activeCategory === 'BF' && !isNaN(Number(header)) ? 'w-10 min-w-[2.5rem]' : ''} 
-            `}>
-              {header}
-            </th>
-          ))}
+          {currentColumns.map((header, idx) => {
+            // Determine if this is a date column (01, 02, etc.)
+            const isDateCol = (activeCategory === 'BF' || activeCategory === 'KH') && !isNaN(Number(header));
+            
+            return (
+              <th key={idx} className={`px-2 py-3 border border-gray-300 text-[11px] font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap text-center
+                  ${header === 'STT' ? 'sticky left-0 bg-gray-100 z-30 border-r-2 border-r-gray-300 w-12' : ''}
+                  ${(header === 'Giảng Viên' && (activeCategory === 'BF' || activeCategory === 'KH')) ? 'sticky left-12 bg-gray-100 z-30 border-r-2 border-r-gray-300 min-w-[180px] text-left px-4' : ''}
+                  ${header === 'Mã Lớp' ? 'min-w-[100px]' : ''}
+                  ${header === 'Nội dung' ? 'min-w-[250px] text-left px-3' : ''}
+                  
+                  ${isDateCol && activeCategory === 'BF' ? 'w-10 min-w-[2.5rem]' : ''}
+                  ${isDateCol && activeCategory === 'KH' ? 'min-w-[150px]' : ''}
+              `}>
+                {header}
+              </th>
+            );
+          })}
         </tr>
       </thead>
     );
@@ -449,14 +603,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
           
           {TH_GROUPS.map(group => 
              group.keys.map((key, kIdx) => {
-               const val = row[key]; // key matches calculated data properties
+               const val = row[key]; 
                const num = Number(val);
-               // Show value only if > 0, otherwise show dash
                const hasValue = val && !isNaN(num) && num > 0;
                
                let cellClass = hasValue ? 'font-bold text-gray-900' : 'text-gray-400';
-               
-               // Highlight Total Columns
                if (hasValue && key.endsWith('Tong')) {
                  if (key.startsWith('M_')) cellClass = 'font-bold text-blue-700 bg-blue-50';
                  else if (key.startsWith('HH_')) cellClass = 'font-bold text-green-700 bg-green-50';
@@ -478,14 +629,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <tr key={rIdx} className="group hover:bg-blue-50 transition-colors">
         {currentColumns.map((header, cIdx) => {
           const value = getRowValue(row, header);
+          const isDateCol = (activeCategory === 'BF' || activeCategory === 'KH') && !isNaN(Number(header));
+          
           return (
             <td 
               key={cIdx} 
-              className={`px-2 py-2 text-xs border border-gray-200 text-gray-700 whitespace-nowrap max-w-xs truncate
+              className={`px-2 py-2 text-xs border border-gray-200 text-gray-700 whitespace-pre-wrap max-w-xs align-top
                 ${header === 'STT' ? 'text-center sticky left-0 bg-gray-50 group-hover:bg-blue-50 border-r-2 border-r-gray-300 font-mono z-10' : ''}
-                ${(header === 'Giảng Viên' && activeCategory === 'BF') ? 'sticky left-12 bg-gray-50 group-hover:bg-blue-50 border-r-2 border-r-gray-300 z-10 font-bold text-vnpt-primary px-4' : ''}
+                ${(header === 'Giảng Viên' && (activeCategory === 'BF' || activeCategory === 'KH')) ? 'sticky left-12 bg-gray-50 group-hover:bg-blue-50 border-r-2 border-r-gray-300 z-10 font-bold text-vnpt-primary px-4' : ''}
                 ${header === 'Nội dung' ? 'whitespace-normal min-w-[250px] text-left px-3' : ''}
-                ${activeCategory === 'BF' && !isNaN(Number(header)) ? 'text-center' : 'text-left'}
+                ${isDateCol && activeCategory === 'KH' ? 'min-w-[150px] text-left' : ''}
+                ${isDateCol && activeCategory !== 'KH' ? 'text-center' : ''}
+                ${!isDateCol && header !== 'Nội dung' && header !== 'Giảng Viên' ? 'text-left' : ''}
                 ${getCellColor(value as string, header)}
               `}
               title={value as string}
@@ -499,8 +654,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const renderContent = () => {
-    // 1. NO SHEET EXISTS
-    if (!targetSheetName) {
+    if (!targetSheetName && activeCategory !== 'KH') {
        return (
          <div className="flex flex-col items-center justify-center h-full bg-gray-50/50">
            <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200 text-center max-w-md">
@@ -509,7 +663,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                  </svg>
               </div>
-              <h3 className="text-lg font-bold text-gray-800 mb-2">Chưa có dữ liệu Tháng {selectedMonth}</h3>
+              <h3 className="text-lg font-bold text-gray-800 mb-2">Chưa có dữ liệu Tháng {selectedMonth}/{currentYear}</h3>
               {canCreateMonth ? (
                 <>
                   <p className="text-gray-500 text-sm mb-6">Bạn có muốn khởi tạo dữ liệu cho tháng này không?</p>
@@ -531,8 +685,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
        );
     }
     
-    // 2. LOADING STATE (Blocking)
-    // Only block if we have no rows AND we are refreshing.
     if (isRefreshing && filteredRows.length === 0) {
         return (
           <div className="flex flex-col items-center justify-center h-full">
@@ -542,8 +694,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         );
     }
 
-    // 3. EMPTY SHEET
-    // If we are in TH mode, filteredRows comes from statisticsData which handles its own empty check.
     if (filteredRows.length === 0 && activeCategory !== 'TH') {
         return (
           <div className="flex flex-col items-center justify-center py-12 text-gray-400">
@@ -551,12 +701,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
              </svg>
              <p className="text-sm font-medium">Bảng tính trống</p>
-             {(canAddBCData || canAddBFData) && <p className="text-xs mt-1">Sử dụng nút "Thêm mới" / "ADD" để nhập liệu</p>}
+             {(canAddBCData || canAddBFData || canAddKHData) && <p className="text-xs mt-1">Sử dụng nút "Thêm mới" / "ADD" để nhập liệu</p>}
           </div>
         );
     }
     
-    // 4. DATA TABLE
     return (
         <div className="flex-1 overflow-auto bg-white custom-scrollbar relative">
             {isRefreshing && (
@@ -598,7 +747,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 className="bg-transparent font-bold text-vnpt-primary outline-none cursor-pointer min-w-[50px]"
              >
                 {ALL_MONTHS.map(m => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>{m}/{currentYear}</option>
                 ))}
              </select>
           </div>
@@ -611,6 +760,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 { id: 'BC', label: 'Báo cáo' },
                 { id: 'BF', label: 'Bù Phép' },
                 { id: 'TH', label: 'Thống kê' },
+                { id: 'KH', label: 'Kế hoạch' },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -664,7 +814,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 placeholder="Tìm kiếm..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                disabled={!targetSheetName}
+                disabled={!targetSheetName && activeCategory !== 'KH'}
                 className="w-full px-3 py-1.5 text-sm outline-none bg-transparent disabled:opacity-50"
               />
             </div>
@@ -693,6 +843,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span className="hidden sm:inline">ADD</span>
             </button>
           )}
+
+          {canAddKHData && (
+            <button 
+              onClick={() => setIsPlanModalOpen(true)}
+              className="flex items-center space-x-1 px-4 py-1.5 bg-green-600 text-white rounded shadow hover:bg-green-700 transition-transform active:scale-95 text-sm font-bold whitespace-nowrap"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+              <span className="hidden sm:inline">ADD</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -714,10 +876,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <LeaveModal
         isOpen={isLeaveModalOpen}
         onClose={() => setIsLeaveModalOpen(false)}
-        onSubmit={handleSaveLeave}
+        onSubmit={handleSaveMatrix}
         month={selectedMonth}
         user={user}
         instructors={instructorList}
+        title="Nhập Bù / Phép"
+      />
+
+      {/* KH Modal (Reusing LeaveModal) */}
+      <LeaveModal
+        isOpen={isPlanModalOpen}
+        onClose={() => setIsPlanModalOpen(false)}
+        onSubmit={handleSaveMatrix}
+        month={selectedMonth}
+        user={user}
+        instructors={instructorList}
+        title="Nhập Kế Hoạch"
       />
     </div>
   );

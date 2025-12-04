@@ -48,6 +48,8 @@ function App() {
 
   // Data Cache: Stores loaded data for each sheet { "BC T05": {headers:..., rows:...} }
   const sheetCache = useRef<Record<string, SheetData>>({});
+  // Version to trigger re-renders when cache updates
+  const [cacheVersion, setCacheVersion] = useState(0);
 
   const [currentSheetData, setCurrentSheetData] = useState<SheetData>({ headers: [], rows: [] });
   const [selectedSheetName, setSelectedSheetName] = useState<string>('');
@@ -234,6 +236,7 @@ function App() {
                         sheetCache.current[backgroundNeeded[i]] = data;
                     });
                     console.log(`Background loaded siblings: ${backgroundNeeded.join(', ')}`);
+                    setCacheVersion(v => v + 1); // Notify change
                 })
                 .catch(err => console.error("Background fetch error", err));
         }
@@ -273,6 +276,7 @@ function App() {
     } catch (error) {
       console.error(error);
     } finally {
+      setCacheVersion(v => v + 1); // Notify change for dependent components
       if (showLoading) setLoadingState(LoadingState.IDLE);
       else setIsRefreshing(false);
     }
@@ -292,6 +296,11 @@ function App() {
   const handleConfigUpdate = (url: string) => {
     setScriptUrl(url);
   };
+
+  // Helper to access cached data (for cross-sheet logic in Dashboard)
+  const getDataBySheetName = useCallback((name: string) => {
+     return sheetCache.current[name];
+  }, []);
 
   // --- RENDER ---
   
@@ -323,6 +332,8 @@ function App() {
                 user={currentUser}
                 isRefreshing={isRefreshing || loadingState === LoadingState.LOADING}
                 appConfig={appConfig}
+                getDataBySheetName={getDataBySheetName}
+                cacheVersion={cacheVersion}
               />
           );
 

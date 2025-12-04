@@ -145,11 +145,12 @@ export const fetchSheetData = async (scriptUrl: string, sheetName: string): Prom
 };
 
 // Save a row to the sheet
-export const saveSheetRow = async (scriptUrl: string, sheetName: string, rowData: SheetRow): Promise<any> => {
+export const saveSheetRow = async (scriptUrl: string, sheetName: string, rowData: SheetRow, matchColumn?: string): Promise<any> => {
   try {
     const payload = JSON.stringify({
       sheetName: sheetName,
       row: rowData,
+      matchColumn: matchColumn, // Optional key to identify unique row for update
       action: 'saveRow'
     });
 

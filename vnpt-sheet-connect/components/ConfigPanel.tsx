@@ -51,14 +51,14 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     try {
       await adminUpdateUser(scriptUrl, 'UPDATE_STATUS', { ...user, status: newStatus });
       loadUsers(); // Refresh
-    } catch (e) { alert('Lỗi cập nhật'); }
+    } catch (e: any) { alert('Lỗi cập nhật: ' + (e.message || e)); }
   };
 
   const handleChangeRole = async (user: User, newRole: UserRole) => {
      try {
       await adminUpdateUser(scriptUrl, 'UPDATE_STATUS', { ...user, role: newRole });
       loadUsers();
-    } catch (e) { alert('Lỗi cập nhật role'); }
+    } catch (e: any) { alert('Lỗi cập nhật role: ' + (e.message || e)); }
   };
 
   const handleResetPass = async (user: User) => {
@@ -67,7 +67,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
      try {
        await adminUpdateUser(scriptUrl, 'RESET_PASS', { ...user, password: newPass });
        alert("Đã đổi mật khẩu thành công!");
-     } catch (e) { alert('Lỗi đổi mật khẩu'); }
+     } catch (e: any) { alert('Lỗi đổi mật khẩu: ' + (e.message || e)); }
   };
 
   const handleAddUser = async (e: React.FormEvent) => {
@@ -78,7 +78,10 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       setNewUser({ username: '', password: '', fullName: '', role: 'INSTRUCTOR', email: '', phone: '', address: '', status: 'ACTIVE' });
       loadUsers();
       alert("Thêm thành công");
-    } catch (e) { alert('Lỗi thêm user'); }
+    } catch (e: any) { 
+      // Show actual error message
+      alert('Lỗi thêm user: ' + (e.message || e)); 
+    }
   };
 
   // --- CONFIG HANDLERS ---
@@ -95,8 +98,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
         await saveAppConfig(scriptUrl, currentUser, parsedConfig);
         onConfigUpdate(parsedConfig);
         alert("Đã lưu cấu hình danh mục thành công!");
-    } catch (error) {
-        alert("Lỗi lưu cấu hình: " + error);
+    } catch (error: any) {
+        alert("Lỗi lưu cấu hình: " + (error.message || error));
     } finally {
         setSavingConfig(false);
     }
@@ -111,6 +114,10 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       if (Array.isArray(arr)) return arr.join('\n');
       return arr;
   };
+
+  // Shared style for inputs/textareas to ensure visibility
+  const inputStyle = "w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-vnpt-primary outline-none bg-white text-gray-900";
+  const modalInputStyle = "w-full border border-gray-300 p-2 rounded text-sm bg-white text-gray-900 focus:ring-2 focus:ring-vnpt-primary outline-none";
 
   return (
     <div className="space-y-8 animate-[fadeIn_0.3s]">
@@ -134,7 +141,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                  <p className="text-xs text-gray-400 mb-2">Mỗi dòng 1 mã</p>
                  <textarea 
                     rows={10}
-                    className="w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-vnpt-primary outline-none"
+                    className={inputStyle}
                     value={arrayToString(configState.classCodes)}
                     onChange={(e) => handleTextAreaChange('classCodes', e.target.value)}
                  />
@@ -145,7 +152,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                  <p className="text-xs text-gray-400 mb-2">Mỗi dòng 1 tên</p>
                  <textarea 
                     rows={10}
-                    className="w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-vnpt-primary outline-none"
+                    className={inputStyle}
                     value={arrayToString(configState.instructors)}
                     onChange={(e) => handleTextAreaChange('instructors', e.target.value)}
                  />
@@ -156,7 +163,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                  <p className="text-xs text-gray-400 mb-2">Mỗi dòng 1 đơn vị</p>
                  <textarea 
                     rows={10}
-                    className="w-full border border-gray-300 rounded p-3 text-sm focus:ring-2 focus:ring-vnpt-primary outline-none"
+                    className={inputStyle}
                     value={arrayToString(configState.units)}
                     onChange={(e) => handleTextAreaChange('units', e.target.value)}
                  />
@@ -200,7 +207,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                                 <select 
                                     value={user.role} 
                                     onChange={(e) => handleChangeRole(user, e.target.value as UserRole)}
-                                    className="border-gray-300 rounded text-xs py-1 px-2 border bg-white focus:ring-vnpt-primary"
+                                    className="border-gray-300 rounded text-xs py-1 px-2 border bg-white text-gray-900 focus:ring-vnpt-primary"
                                 >
                                     <option value="ADMIN">ADMIN</option>
                                     <option value="LEADER">Tổ trưởng</option>
@@ -236,19 +243,31 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       {/* Add User Modal */}
       {isAddOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-              <div className="bg-white p-6 rounded-lg w-full max-w-md shadow-xl">
+              <div className="bg-white p-6 rounded-lg w-full max-w-md shadow-xl border border-gray-200">
                   <h3 className="font-bold text-lg mb-4 text-vnpt-primary">Thêm tài khoản mới</h3>
                   <form onSubmit={handleAddUser} className="space-y-3">
-                      <input placeholder="Tên đăng nhập" required className="w-full border p-2 rounded text-sm" value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})} />
-                      <input placeholder="Mật khẩu" required className="w-full border p-2 rounded text-sm" value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})} />
-                      <input placeholder="Họ và tên" required className="w-full border p-2 rounded text-sm" value={newUser.fullName} onChange={e=>setNewUser({...newUser, fullName: e.target.value})} />
-                      <select className="w-full border p-2 rounded text-sm" value={newUser.role} onChange={e=>setNewUser({...newUser, role: e.target.value as UserRole})}>
-                          <option value="ADMIN">Quản trị viên</option>
-                          <option value="LEADER">Tổ trưởng</option>
-                          <option value="INSTRUCTOR">Giảng viên</option>
-                      </select>
-                      <input placeholder="Email" className="w-full border p-2 rounded text-sm" value={newUser.email} onChange={e=>setNewUser({...newUser, email: e.target.value})} />
-                      <input placeholder="SĐT" className="w-full border p-2 rounded text-sm" value={newUser.phone} onChange={e=>setNewUser({...newUser, phone: e.target.value})} />
+                      <div>
+                        <input placeholder="Tên đăng nhập" required className={modalInputStyle} value={newUser.username} onChange={e=>setNewUser({...newUser, username: e.target.value})} />
+                      </div>
+                      <div>
+                        <input placeholder="Mật khẩu" required className={modalInputStyle} value={newUser.password} onChange={e=>setNewUser({...newUser, password: e.target.value})} />
+                      </div>
+                      <div>
+                        <input placeholder="Họ và tên" required className={modalInputStyle} value={newUser.fullName} onChange={e=>setNewUser({...newUser, fullName: e.target.value})} />
+                      </div>
+                      <div>
+                        <select className={modalInputStyle} value={newUser.role} onChange={e=>setNewUser({...newUser, role: e.target.value as UserRole})}>
+                            <option value="ADMIN">Quản trị viên</option>
+                            <option value="LEADER">Tổ trưởng</option>
+                            <option value="INSTRUCTOR">Giảng viên</option>
+                        </select>
+                      </div>
+                      <div>
+                        <input placeholder="Email" className={modalInputStyle} value={newUser.email} onChange={e=>setNewUser({...newUser, email: e.target.value})} />
+                      </div>
+                      <div>
+                        <input placeholder="SĐT" className={modalInputStyle} value={newUser.phone} onChange={e=>setNewUser({...newUser, phone: e.target.value})} />
+                      </div>
                       
                       <div className="flex justify-end gap-2 mt-4">
                           <button type="button" onClick={() => setIsAddOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Hủy</button>

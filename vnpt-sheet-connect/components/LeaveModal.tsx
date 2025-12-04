@@ -9,6 +9,7 @@ interface LeaveModalProps {
   month: string; // Current selected month (e.g., "05")
   user: User;
   instructors: string[]; // List of available instructors for Admin
+  title?: string; // New prop for custom title
 }
 
 export const LeaveModal: React.FC<LeaveModalProps> = ({ 
@@ -17,7 +18,8 @@ export const LeaveModal: React.FC<LeaveModalProps> = ({
   onSubmit, 
   month, 
   user, 
-  instructors 
+  instructors,
+  title = "Nhập Bù / Phép" // Default value
 }) => {
   const [date, setDate] = useState('');
   const [content, setContent] = useState('');
@@ -91,13 +93,21 @@ export const LeaveModal: React.FC<LeaveModalProps> = ({
   const isAdmin = user.role === 'ADMIN';
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-[fadeIn_0.2s]">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-md flex flex-col overflow-hidden">
+    // Changed bg-black/70 to bg-blue-900/50 for "VNPT no black" theme
+    <div className="fixed inset-0 bg-blue-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-[fadeIn_0.2s]">
+      <style>{`
+        /* Custom style to color the calendar icon blue */
+        input[type="date"]::-webkit-calendar-picker-indicator {
+          cursor: pointer;
+          filter: invert(31%) sepia(95%) saturate(1588%) hue-rotate(193deg) brightness(90%) contrast(92%);
+        }
+      `}</style>
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-md flex flex-col overflow-hidden border border-blue-100">
         
-        {/* Header */}
-        <div className="px-6 py-4 bg-orange-600 text-white flex justify-between items-center">
-          <h3 className="text-lg font-bold uppercase tracking-wide">Nhập Bù / Phép</h3>
-          <button onClick={onClose} className="hover:bg-orange-700 p-1 rounded transition-colors text-white">
+        {/* Header - VNPT Blue */}
+        <div className="px-6 py-4 bg-vnpt-primary text-white flex justify-between items-center">
+          <h3 className="text-lg font-bold uppercase tracking-wide">{title}</h3>
+          <button onClick={onClose} className="hover:bg-blue-700 p-1 rounded transition-colors text-white">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -120,7 +130,7 @@ export const LeaveModal: React.FC<LeaveModalProps> = ({
               <select 
                 value={selectedInstructor}
                 onChange={(e) => setSelectedInstructor(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-orange-500 outline-none text-sm bg-gray-50"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-vnpt-primary outline-none text-sm bg-white text-gray-900"
                 required
               >
                 <option value="">-- Chọn giảng viên --</option>
@@ -148,7 +158,7 @@ export const LeaveModal: React.FC<LeaveModalProps> = ({
               type="date" 
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-orange-500 outline-none text-sm"
+              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-vnpt-primary outline-none text-sm text-gray-900 bg-white font-medium"
               required
             />
             <p className="text-[10px] text-gray-400 mt-1 italic">Chỉ được chọn ngày trong tháng đang hiển thị.</p>
@@ -161,18 +171,18 @@ export const LeaveModal: React.FC<LeaveModalProps> = ({
               type="text" 
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Nhập lý do (VD: P, KP, B...)"
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-orange-500 outline-none text-sm font-bold text-gray-800"
+              placeholder="Nhập nội dung..."
+              className="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-vnpt-primary outline-none text-sm font-bold text-gray-900 bg-white"
               required
             />
           </div>
 
-          {/* Actions */}
+          {/* Actions - VNPT Blue */}
           <div className="pt-4 flex justify-end space-x-3">
             <button 
               type="button" 
               onClick={onClose}
-              className="px-4 py-2 rounded text-gray-600 hover:bg-gray-100 font-medium text-sm transition-colors"
+              className="px-4 py-2 rounded text-gray-600 hover:bg-gray-100 font-medium text-sm transition-colors border border-gray-200 bg-white"
             >
               Hủy
             </button>
@@ -180,7 +190,7 @@ export const LeaveModal: React.FC<LeaveModalProps> = ({
               type="submit"
               disabled={loading}
               className={`px-6 py-2 rounded text-white font-bold shadow transition-all text-sm
-                ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-orange-600 hover:bg-orange-700 active:scale-95'}
+                ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-vnpt-primary hover:bg-blue-700 active:scale-95'}
               `}
             >
               {loading ? 'Đang lưu...' : 'Lưu dữ liệu'}
