@@ -23,17 +23,19 @@ interface DashboardProps {
   appConfig: AppConfig;
   getDataBySheetName: (name: string) => SheetData | undefined;
   cacheVersion?: number;
-  initialCategory?: SheetCategory; // Added prop
+  initialCategory?: SheetCategory;
+  onLoadAllMonths?: (year: string) => Promise<void>; // New prop for yearly data
 }
 
 // Columns for Report view
 const REPORT_COLUMNS = [
-  'STT', 'Mã Lớp', 'Nội dung', 'Buổi', 'Ngày', 'Thứ', 'GV', 
+  'STT', 'Mã Lớp', 'Nội dung', 'Buổi', 'Ngày', 'Thứ', 'Giảng Viên', 
   '91', '66', '60', 'OL', 'KN', 'Coach', 'OKR', 'STL', 'OS', 'CT', 'HOC', 
   'Đơn vị', 'SL HV', 'Hình Thức', 'ĐTV'
 ];
 
 // Definition for Statistics (TH) View
+// CHANGED: Added 'Họp' back to ALL group
 const TH_GROUPS = [
   { 
     title: 'ĐTV-M', 
@@ -50,8 +52,9 @@ const TH_GROUPS = [
   { 
     title: 'ALL', 
     colorClass: 'bg-orange-50 text-orange-800', 
-    cols: ['91', '66', '60', 'OL', 'KN', 'Coach', 'OS', 'CT', 'Họp', 'Học', 'Tổng'],
-    keys: ['ALL_91', 'ALL_66', 'ALL_60', 'ALL_OL', 'ALL_KN', 'ALL_Coach', 'ALL_OS', 'ALL_CT', 'ALL_Hop', 'ALL_Hoc', 'ALL_Tong']
+    // Added 'Họp'
+    cols: ['91', '66', '60', 'OL', 'KN', 'Coach', 'OS', 'CT', 'OKR', 'STL', 'Họp', 'Học', 'Tổng'],
+    keys: ['ALL_91', 'ALL_66', 'ALL_60', 'ALL_OL', 'ALL_KN', 'ALL_Coach', 'ALL_OS', 'ALL_CT', 'ALL_OKR', 'ALL_STL', 'ALL_Hop', 'ALL_Hoc', 'ALL_Tong']
   }
 ];
 
@@ -60,8 +63,11 @@ const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => {
   return m < 10 ? `0${m}` : `${m}`;
 });
 
-const getDaysArray = (monthStr: string) => {
-  const year = new Date().getFullYear();
+// Generate Year Range: Current Year +/- 5 years
+const currentRealYear = new Date().getFullYear();
+const YEAR_LIST = Array.from({ length: 11 }, (_, i) => currentRealYear - 5 + i);
+
+const getDaysArray = (monthStr: string, year: number) => {
   const monthIndex = parseInt(monthStr, 10); 
   const daysInMonth = new Date(year, monthIndex, 0).getDate();
   return Array.from({ length: daysInMonth }, (_, i) => {
@@ -82,8 +88,7 @@ const getDayLabel = (dayStr: string, monthStr: string, year: number) => {
 };
 
 const getWeekendClass = (label: string) => {
-  if (label === 'CN') return 'bg-red-50 text-red-700';
-  if (label === 'T7') return 'bg-yellow-50 text-yellow-700';
+  if (label === 'CN' || label === 'T7') return 'bg-pink-100 text-pink-900';
   return '';
 };
 
@@ -111,11 +116,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   appConfig,
   getDataBySheetName,
   cacheVersion = 0,
-  initialCategory = 'BC'
+  initialCategory = 'BC',
+  onLoadAllMonths
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
   // --- STATE ---
+  const [selectedYear, setSelectedYear] = useState<number>(currentRealYear);
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const currentMonth = new Date().getMonth() + 1;
     return currentMonth < 10 ? `0${currentMonth}` : `${currentMonth}`;
@@ -123,48 +130,39 @@ export const Dashboard: React.FC<DashboardProps> = ({
   
   const [activeCategory, setActiveCategory] = useState<SheetCategory>(initialCategory);
   const [nvSubTab, setNvSubTab] = useState<NghiepVuTab>('Di động');
-  const currentYear = new Date().getFullYear();
-  
-  // Update category if initialCategory changes (e.g. from nav bar)
+  const [isYearlyMode, setIsYearlyMode] = useState(false);
+
+  // Update category if initialCategory changes
   useEffect(() => {
     setActiveCategory(initialCategory);
   }, [initialCategory]);
 
+  // Turn off yearly mode when switching categories
+  useEffect(() => {
+    if (activeCategory !== 'TH') {
+      setIsYearlyMode(false);
+    }
+  }, [activeCategory]);
+
   // Modal States
-  const [isModalOpen, setIsModalOpen] = useState(false); // For BC (EntryModal)
-  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false); // For BF (LeaveModal)
-  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false); // For KH (Plan Modal)
+  const [isModalOpen, setIsModalOpen] = useState(false); 
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
   
   const [isCreating, setIsCreating] = useState(false);
   const [updateTrigger, setUpdateTrigger] = useState(0); 
 
   // --- AUTO-SWITCH MONTH LOGIC ---
   useEffect(() => {
-    // Skip auto-switch month if in NV mode (Operations don't use months)
     if (availableSheets.length === 0 || activeCategory === 'NV') return;
 
-    const availableMonths = [...new Set(availableSheets
-      .map(name => {
-        const match = name.match(/-T(\d{2})/); 
-        return match ? match[1] : null;
-      })
-      .filter(m => m !== null)
-    )] as string[];
-
-    if (availableMonths.length > 0) {
-      if (!availableMonths.includes(selectedMonth)) {
-        availableMonths.sort();
-        const latestMonth = availableMonths[availableMonths.length - 1];
-        setSelectedMonth(latestMonth);
-      }
-    }
+    // Filter available months for the SELECTED YEAR if possible, or just recent ones
+    // We stick to current selection if valid
   }, [availableSheets, activeCategory]); 
 
 
   // --- DERIVED STATE ---
   const targetSheetName = useMemo(() => {
-    // --- SPECIAL LOGIC FOR NGHIỆP VỤ (NV) ---
-    // Instead of looking for T{Month}, look for specific sheets based on SubTab
     if (activeCategory === 'NV') {
         const subTabMap: Record<NghiepVuTab, string> = {
             'Di động': 'NV_DIDONG',
@@ -173,40 +171,79 @@ export const Dashboard: React.FC<DashboardProps> = ({
             'ONLINE': 'NV_ONLINE'
         };
         const keyword = subTabMap[nvSubTab];
-        // Find sheet that matches the keyword (e.g. "NV_DIDONG")
         return availableSheets.find(s => s.toUpperCase().includes(keyword)) || '';
     }
 
-    // --- LOGIC FOR REPORTS (BC, BF, KH, TH) ---
     const monthPattern = selectedMonth.length === 1 ? `0${selectedMonth}` : selectedMonth;
     const suffix = `-T${monthPattern}`;
+    const yearSuffix = `-${selectedYear}`; // Assuming format like BC-T01-2025 could exist
 
     const searchType = (activeCategory === 'TH') ? 'BC' : activeCategory;
 
-    return availableSheets.find(name => {
+    // First try to find sheet with specific Year
+    let found = availableSheets.find(name => {
       const nameUpper = name.toUpperCase();
-      if (!nameUpper.includes(suffix)) return false;
-      if (searchType === 'BC') return nameUpper.includes('BC');
-      if (searchType === 'BF') return nameUpper.includes('BF') || nameUpper.includes('BU');
-      if (searchType === 'KH') return nameUpper.includes('KH') || nameUpper.includes('KE'); 
-      return false;
+      // Must contain type (e.g. BC) and Month (e.g. T05) and Year
+      return nameUpper.includes(searchType) && nameUpper.includes(suffix) && nameUpper.includes(yearSuffix);
     });
-  }, [availableSheets, selectedMonth, activeCategory, nvSubTab]);
+
+    // If not found, try generic Month (ignoring Year or assuming current file is correct)
+    if (!found) {
+        found = availableSheets.find(name => {
+            const nameUpper = name.toUpperCase();
+            return nameUpper.includes(searchType) && nameUpper.includes(suffix);
+        });
+    }
+
+    return found;
+  }, [availableSheets, selectedMonth, selectedYear, activeCategory, nvSubTab]);
 
   useEffect(() => {
-    if (targetSheetName && targetSheetName !== currentSheetName) {
+    // Only switch sheet if NOT in yearly mode
+    if (targetSheetName && targetSheetName !== currentSheetName && !isYearlyMode) {
       onSheetChange(targetSheetName);
     }
-  }, [targetSheetName, currentSheetName, onSheetChange]);
+  }, [targetSheetName, currentSheetName, onSheetChange, isYearlyMode]);
 
 
-  // --- CALCULATE STATISTICS (THE "TẬP HỢP" LOGIC) ---
+  // --- CALCULATE STATISTICS ---
   const statisticsData = useMemo(() => {
-    if (activeCategory !== 'TH' || !data || !data.rows) return [];
+    if (activeCategory !== 'TH') return [];
+
+    // Determine Source Data
+    let sourceRows: SheetRow[] = [];
+
+    if (isYearlyMode) {
+        // AGGREGATE ALL MONTHS (BC-T01 to BC-T12)
+        ALL_MONTHS.forEach(m => {
+             const mSuffix = `-T${m}`;
+             const ySuffix = `-${selectedYear}`;
+             // Find sheet for this month
+             let sName = availableSheets.find(n => n.includes('BC') && n.includes(mSuffix) && n.includes(ySuffix));
+             if (!sName) {
+                 // Fallback to year-less
+                 sName = availableSheets.find(n => n.includes('BC') && n.includes(mSuffix));
+             }
+
+             if (sName) {
+                 const sData = getDataBySheetName(sName);
+                 if (sData && sData.rows) {
+                     sourceRows = [...sourceRows, ...sData.rows];
+                 }
+             }
+        });
+    } else {
+        // SINGLE MONTH
+        if (data && data.rows) {
+            sourceRows = data.rows;
+        }
+    }
+
+    if (sourceRows.length === 0) return [];
 
     const statsMap: Record<string, any> = {};
 
-    data.rows.forEach(row => {
+    sourceRows.forEach(row => {
       const gv = row['GV'] || row['Giảng Viên'];
       if (!gv) return;
       
@@ -217,7 +254,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           'M_91': 0, 'M_66': 0, 'M_60': 0, 'M_OL': 0, 'M_KN': 0, 'M_Coach': 0, 'M_Tong': 0,
           'HH_91': 0, 'HH_66': 0, 'HH_60': 0, 'HH_OL': 0, 'HH_KN': 0, 'HH_Coach': 0, 'HH_Tong': 0,
           'ALL_91': 0, 'ALL_66': 0, 'ALL_60': 0, 'ALL_OL': 0, 'ALL_KN': 0, 'ALL_Coach': 0, 
-          'ALL_OS': 0, 'ALL_CT': 0, 'ALL_Hop': 0, 'ALL_Hoc': 0, 'ALL_Tong': 0
+          'ALL_OS': 0, 'ALL_CT': 0, 'ALL_OKR': 0, 'ALL_STL': 0, 'ALL_Hop': 0, 'ALL_Hoc': 0, 'ALL_Tong': 0
         };
       }
 
@@ -245,14 +282,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const valOS = parseVal(row['OS']);
       const valCT = parseVal(row['CT']);
       const valHoc = parseVal(row['HOC']);
-      const valHop = parseVal(row['OKR']) + parseVal(row['STL']); 
+      const valOKR = parseVal(row['OKR']);
+      const valSTL = parseVal(row['STL']);
+      
+      // Calculate 'Họp' = OKR + STL
+      const valHop = valOKR + valSTL;
 
       statsMap[gvKey]['ALL_OS'] += valOS;
       statsMap[gvKey]['ALL_CT'] += valCT;
       statsMap[gvKey]['ALL_Hoc'] += valHoc;
-      statsMap[gvKey]['ALL_Hop'] += valHop;
+      statsMap[gvKey]['ALL_OKR'] += valOKR;
+      statsMap[gvKey]['ALL_STL'] += valSTL;
+      statsMap[gvKey]['ALL_Hop'] += valHop; // Accumulate Hop
 
-      rowSumALL += (valOS + valCT + valHoc + valHop);
+      // Sum everything for Total
+      rowSumALL += (valOS + valCT + valHoc + valOKR + valSTL);
       statsMap[gvKey]['ALL_Tong'] += rowSumALL;
     });
 
@@ -261,7 +305,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       'STT': (index + 1).toString()
     }));
 
-  }, [data, activeCategory]);
+  }, [data, activeCategory, isYearlyMode, selectedYear, availableSheets, cacheVersion]); 
+  // Dependency on cacheVersion ensures re-calc when background sheets load
 
   // --- EXTRACT INSTRUCTORS ---
   const instructorList = useMemo(() => {
@@ -279,7 +324,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const currentColumns = useMemo(() => {
     if (activeCategory === 'BF' || activeCategory === 'KH') {
-      const days = selectedMonth ? getDaysArray(selectedMonth) : [];
+      const days = selectedMonth ? getDaysArray(selectedMonth, selectedYear) : [];
       return ['STT', 'Giảng Viên', ...days];
     }
     if (activeCategory === 'TH') {
@@ -287,7 +332,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
     // NV uses same columns as BC
     return REPORT_COLUMNS;
-  }, [activeCategory, selectedMonth]);
+  }, [activeCategory, selectedMonth, selectedYear]);
 
   const filteredRows = useMemo(() => {
     // 1. Thống Kê
@@ -299,8 +344,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
 
     // 2. Nghiệp Vụ (Specific Sheets)
-    // We are now loading dedicated sheets for each sub-tab, so no complex filtering needed
-    // Just simple search
     if (activeCategory === 'NV') {
        if (!data || !data.rows) return [];
        return data.rows.filter(row => 
@@ -334,7 +377,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
              });
          }
          const sortedInstructors = [...allInstructorsSet].sort();
-         const daysArray = getDaysArray(selectedMonth);
+         const daysArray = getDaysArray(selectedMonth, selectedYear);
 
          const calculatedRows = sortedInstructors.map((instructor: string, idx) => {
             const rowObj: SheetRow = {
@@ -397,8 +440,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                                 const lines = matchingBC.map(item => {
                                    const maLop = String(item['Mã Lớp'] || item['Nội dung'] || '?');
                                    const buoi = String(item['Buổi'] || '');
-                                   return `${maLop} - ${buoi}`;
+                                   // Compact format "Code-Shift" (e.g. A-S) without spaces
+                                   return `${maLop}-${buoi}`;
                                 });
+                                // Join multiple entries
                                 cellContent = lines.join('\n');
                              }
                         }
@@ -424,13 +469,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
         (val as string).toLowerCase().includes(searchTerm.toLowerCase())
       )
     );
-  }, [data, statisticsData, searchTerm, activeCategory, nvSubTab, targetSheetName, appConfig, updateTrigger, selectedMonth, availableSheets, getDataBySheetName, cacheVersion]);
+  }, [data, statisticsData, searchTerm, activeCategory, nvSubTab, targetSheetName, appConfig, updateTrigger, selectedMonth, availableSheets, getDataBySheetName, cacheVersion, isYearlyMode]);
 
   const getCellColor = (value: string, header: string, dayLabel?: string) => {
     // 1. Highlight Weekends for KH/BF (Column based)
     if (dayLabel) {
-       if (dayLabel === 'CN') return 'bg-red-50 text-red-900';
-       if (dayLabel === 'T7') return 'bg-yellow-50 text-yellow-900';
+       // Use Pink for both CN and T7
+       if (dayLabel === 'CN' || dayLabel === 'T7') return 'bg-pink-100 text-pink-900';
     }
 
     // 2. Highlight Specific Content for KH/BF
@@ -456,8 +501,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     // 4. Highlight specific cells for BC view (T7/CN)
     if ((activeCategory === 'BC' || activeCategory === 'NV') && (header === 'Ngày' || header === 'Thứ')) {
         const val = value?.trim().toLowerCase();
-        if (val === 'cn' || val === 'chủ nhật' || (header === 'Ngày' && (new Date(value).getDay() === 0))) return 'bg-red-100 text-red-700 font-bold';
-        if (val === 't7' || val === 'thứ 7' || val === 'thứ bảy' || (header === 'Ngày' && (new Date(value).getDay() === 6))) return 'bg-yellow-100 text-yellow-700 font-bold';
+        if (val === 'cn' || val === 'chủ nhật' || (header === 'Ngày' && (new Date(value).getDay() === 0))) return 'bg-pink-100 text-pink-700 font-bold';
+        if (val === 't7' || val === 'thứ 7' || val === 'thứ bảy' || (header === 'Ngày' && (new Date(value).getDay() === 6))) return 'bg-pink-100 text-pink-700 font-bold';
     }
 
     if (value && !isNaN(Number(value)) && Number(value) > 0) {
@@ -543,7 +588,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const handleCreateMonth = async () => {
     setIsCreating(true);
     try {
-      const res = await createMonthSheets(scriptUrl, selectedMonth);
+      // CHANGED: Pass selectedYear to creation function
+      const res = await createMonthSheets(scriptUrl, selectedMonth, selectedYear);
       if (res.success) {
           if (res.spreadsheetUrl) {
             onUrlUpdate(res.spreadsheetUrl);
@@ -572,6 +618,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  const handleYearlyClick = async () => {
+      const newMode = !isYearlyMode;
+      setIsYearlyMode(newMode);
+      if (newMode && onLoadAllMonths) {
+          // Trigger data loading for all months in the selected year
+          await onLoadAllMonths(selectedYear.toString());
+      }
+  };
+
   const nextStt = (data.rows?.length || 0) + 1;
 
   // --- RENDERERS ---
@@ -592,7 +647,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <tr>
             {TH_GROUPS.map((group) => (
               group.cols.map((col, idx) => (
-                <th key={`${group.title}-${idx}`} className="px-1 py-1 bg-gray-50 border border-gray-300 text-[10px] font-bold text-gray-600 min-w-[40px]">
+                <th key={`${group.title}-${idx}`} className="px-1 py-1 bg-gray-50 border border-gray-300 text-sm font-bold text-gray-600 min-w-[40px]">
                   {col}
                 </th>
               ))
@@ -604,18 +659,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     // 2. KẾ HOẠCH (KH) & BÙ PHÉP (BF) - Double Header Row
     if (activeCategory === 'KH' || activeCategory === 'BF') {
-      const days = selectedMonth ? getDaysArray(selectedMonth) : [];
+      const days = selectedMonth ? getDaysArray(selectedMonth, selectedYear) : [];
       return (
         <thead className="sticky top-0 z-20 shadow-sm text-center bg-white">
           {/* Row 1: Day of Week (Thứ) */}
           <tr className="bg-gray-100">
             <th rowSpan={2} className="px-2 py-2 border border-gray-300 text-gray-600 font-bold sticky left-0 z-30 w-12 border-r-2 border-r-gray-300 bg-gray-100">STT</th>
-            <th rowSpan={2} className="px-4 py-2 border border-gray-300 text-gray-600 font-bold sticky left-12 z-30 min-w-[180px] text-left border-r-2 border-r-gray-300 bg-gray-100">GIẢNG VIÊN</th>
+            <th rowSpan={2} className="px-4 py-2 border border-gray-300 text-gray-600 font-bold sticky left-12 z-30 min-w-[130px] text-left border-r-2 border-r-gray-300 bg-gray-100">GIẢNG VIÊN</th>
             {days.map((day, idx) => {
-               const dayLabel = getDayLabel(day, selectedMonth, currentYear);
+               const dayLabel = getDayLabel(day, selectedMonth, selectedYear);
                const weekendClass = getWeekendClass(dayLabel);
                return (
-                 <th key={`dow-${idx}`} className={`px-1 py-1 border border-gray-300 text-[10px] font-bold ${weekendClass || 'text-gray-500 bg-gray-50'}`}>
+                 <th key={`dow-${idx}`} className={`px-1 py-1 border border-gray-300 text-sm font-bold ${weekendClass || 'text-gray-500 bg-gray-50'}`}>
                    {dayLabel}
                  </th>
                );
@@ -624,10 +679,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
           {/* Row 2: Date (Ngày) */}
           <tr className="bg-gray-50">
             {days.map((day, idx) => {
-               const dayLabel = getDayLabel(day, selectedMonth, currentYear);
+               const dayLabel = getDayLabel(day, selectedMonth, selectedYear);
                const weekendClass = getWeekendClass(dayLabel);
                return (
-                  <th key={`date-${idx}`} className={`px-2 py-2 border border-gray-300 text-[11px] font-bold ${weekendClass || 'text-gray-700'} min-w-[40px] ${activeCategory === 'KH' ? 'min-w-[150px]' : ''}`}>
+                  // Min-width 90px to fit ~10 chars
+                  <th key={`date-${idx}`} className={`px-1 py-2 border border-gray-300 text-sm font-bold ${weekendClass || 'text-gray-700'} min-w-[90px]`}>
                     {day}
                   </th>
                );
@@ -643,7 +699,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <tr>
           {currentColumns.map((header, idx) => {
             return (
-              <th key={idx} className={`px-2 py-3 border border-gray-300 text-[11px] font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap text-center
+              // text-sm
+              <th key={idx} className={`px-2 py-3 border border-gray-300 text-sm font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap text-center
                   ${header === 'STT' ? 'sticky left-0 bg-gray-100 z-30 border-r-2 border-r-gray-300 w-12' : ''}
                   ${header === 'Mã Lớp' ? 'min-w-[100px]' : ''}
                   ${header === 'Nội dung' ? 'min-w-[250px] text-left px-3' : ''}
@@ -663,7 +720,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return (
           <tr>
             <td colSpan={25} className="text-center py-8 text-gray-400">
-               Không có dữ liệu tổng hợp cho tháng này (hoặc chưa nhập ĐTV trong Báo Cáo).
+               {isYearlyMode ? `Chưa có dữ liệu tổng hợp năm ${selectedYear}.` : 'Không có dữ liệu tổng hợp cho tháng này.'}
             </td>
           </tr>
         )
@@ -671,8 +728,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       return filteredRows.map((row, rIdx) => (
         <tr key={rIdx} className="hover:bg-blue-50 transition-colors">
-          <td className="px-2 py-1 text-xs border border-gray-200 text-center sticky left-0 bg-white border-r-2 border-r-gray-300 z-10 font-mono text-gray-700">{row['STT']}</td>
-          <td className="px-4 py-1 text-xs border border-gray-200 text-left sticky left-12 bg-white border-r-2 border-r-gray-300 z-10 font-bold whitespace-nowrap text-gray-800">{row['Giảng Viên']}</td>
+          <td className="px-2 py-1 text-sm border border-gray-200 text-center sticky left-0 bg-white border-r-2 border-r-gray-300 z-10 font-mono text-gray-700">{row['STT']}</td>
+          <td className="px-4 py-1 text-sm border border-gray-200 text-left sticky left-12 bg-white border-r-2 border-r-gray-300 z-10 font-bold whitespace-nowrap text-gray-800">{row['Giảng Viên']}</td>
           {TH_GROUPS.map(group => 
              group.keys.map((key, kIdx) => {
                const val = row[key]; 
@@ -685,7 +742,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                  else if (key.startsWith('ALL_')) cellClass = 'font-bold text-red-600 bg-red-50';
                }
                return (
-                 <td key={`${group.title}-${key}-${kIdx}`} className={`px-2 py-1 text-xs border border-gray-200 text-center ${cellClass}`}>
+                 <td key={`${group.title}-${key}-${kIdx}`} className={`px-2 py-1 text-sm border border-gray-200 text-center ${cellClass}`}>
                    {hasValue ? val : '-'}
                  </td>
                )
@@ -703,17 +760,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
           
           let dayLabel = '';
           if (isDateCol) {
-             dayLabel = getDayLabel(header, selectedMonth, currentYear);
+             dayLabel = getDayLabel(header, selectedMonth, selectedYear);
           }
 
           return (
             <td 
               key={cIdx} 
-              className={`px-2 py-2 text-xs border border-gray-200 text-gray-700 whitespace-pre-wrap max-w-xs align-top
+              // text-sm for larger font
+              className={`px-1 py-2 text-sm border border-gray-200 text-gray-700 whitespace-pre-wrap max-w-xs align-top
                 ${header === 'STT' ? 'text-center sticky left-0 bg-gray-50 group-hover:bg-blue-50 border-r-2 border-r-gray-300 font-mono z-10' : ''}
-                ${(header === 'Giảng Viên' && (activeCategory === 'BF' || activeCategory === 'KH')) ? 'sticky left-12 bg-gray-50 group-hover:bg-blue-50 border-r-2 border-r-gray-300 z-10 font-bold text-vnpt-primary px-4' : ''}
+                ${(header === 'Giảng Viên' && (activeCategory === 'BF' || activeCategory === 'KH')) ? 'sticky left-12 bg-gray-50 group-hover:bg-blue-50 border-r-2 border-r-gray-300 z-10 font-bold text-vnpt-primary px-4 min-w-[130px]' : ''}
                 ${header === 'Nội dung' ? 'whitespace-normal min-w-[250px] text-left px-3' : ''}
-                ${isDateCol && activeCategory === 'KH' ? 'min-w-[150px] text-left' : ''}
+                ${isDateCol && activeCategory === 'KH' ? 'text-left leading-tight min-w-[90px]' : ''}
                 ${isDateCol && activeCategory !== 'KH' ? 'text-center' : ''}
                 ${!isDateCol && header !== 'Nội dung' && header !== 'Giảng Viên' ? 'text-left' : ''}
                 ${getCellColor(value as string, header, dayLabel)}
@@ -730,7 +788,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const renderContent = () => {
     // Check loading first to avoid flickering
-    if (isRefreshing && (!targetSheetName || filteredRows.length === 0)) {
+    if (isRefreshing && (!targetSheetName || filteredRows.length === 0) && !isYearlyMode) {
         return (
           <div className="flex flex-col items-center justify-center h-full">
             <div className="w-10 h-10 border-4 border-gray-200 border-t-vnpt-primary rounded-full animate-spin mb-4"></div>
@@ -740,11 +798,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
     
     // If no sheet is selected/found (and not loading)
-    if (!targetSheetName && activeCategory !== 'KH') {
+    if (!targetSheetName && activeCategory !== 'KH' && !isYearlyMode) {
        const isNVMode = activeCategory === 'NV';
        const message = isNVMode 
          ? "Chưa có dữ liệu Nghiệp Vụ cho mục này."
-         : `Chưa có dữ liệu Tháng ${selectedMonth}/${currentYear}`;
+         : `Chưa có dữ liệu Tháng ${selectedMonth}/${selectedYear}`;
          
        const btnAction = isNVMode ? handleCreateNVSheets : handleCreateMonth;
        const btnText = isNVMode ? "Khởi tạo NV" : "Khởi tạo tháng";
@@ -826,18 +884,35 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="flex items-center gap-6 overflow-x-auto no-scrollbar">
             
-            {/* Show Month Selector ONLY if NOT in NV (Nghiệp Vụ) */}
+            {/* Show Month/Year Selector ONLY if NOT in NV (Nghiệp Vụ) */}
             {activeCategory !== 'NV' && (
               <>
                 <div className="flex items-center space-x-2 bg-gray-50 rounded-md border border-gray-200 px-3 py-1.5 whitespace-nowrap">
+                    {/* YEAR SELECTOR */}
+                    <span className="text-gray-500 text-sm font-medium">Năm:</span>
+                    <select 
+                        value={selectedYear}
+                        onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                        className="bg-transparent font-bold text-vnpt-primary outline-none cursor-pointer"
+                        disabled={isYearlyMode}
+                    >
+                        {YEAR_LIST.map(y => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                    </select>
+
+                    <div className="w-px h-4 bg-gray-300 mx-2"></div>
+
+                    {/* MONTH SELECTOR */}
                     <span className="text-gray-500 text-sm font-medium">Tháng:</span>
                     <select 
                         value={selectedMonth}
                         onChange={(e) => setSelectedMonth(e.target.value)}
-                        className="bg-transparent font-bold text-vnpt-primary outline-none cursor-pointer min-w-[50px]"
+                        className="bg-transparent font-bold text-vnpt-primary outline-none cursor-pointer min-w-[40px]"
+                        disabled={isYearlyMode}
                     >
                         {ALL_MONTHS.map(m => (
-                        <option key={m} value={m}>{m}/{currentYear}</option>
+                        <option key={m} value={m}>{m}</option>
                         ))}
                     </select>
                 </div>
@@ -910,6 +985,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
 
             <div className="flex items-center gap-3 w-full lg:w-auto">
+            
+            {/* Year Summary Button */}
+            {activeCategory === 'TH' && (
+                <button
+                    onClick={handleYearlyClick}
+                    className={`px-3 py-1.5 text-sm font-bold rounded-md border transition-all whitespace-nowrap
+                        ${isYearlyMode 
+                            ? 'bg-orange-600 text-white border-orange-700' 
+                            : 'bg-white text-orange-600 border-orange-300 hover:bg-orange-50'}`}
+                >
+                    {isYearlyMode ? 'Quay lại Tháng' : 'Tổng hợp Năm'}
+                </button>
+            )}
+
             <div className="relative group w-full lg:w-64">
                 <div className="flex items-center border border-gray-300 rounded-md overflow-hidden focus-within:ring-1 focus-within:ring-vnpt-primary focus-within:border-vnpt-primary transition-all bg-gray-50">
                 <input
@@ -917,7 +1006,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     placeholder="Tìm kiếm..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    disabled={!targetSheetName && activeCategory !== 'KH'}
+                    disabled={(!targetSheetName && activeCategory !== 'KH') && !isYearlyMode}
                     className="w-full px-3 py-1.5 text-sm outline-none bg-transparent disabled:opacity-50"
                 />
                 </div>

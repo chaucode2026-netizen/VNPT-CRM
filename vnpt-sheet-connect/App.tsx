@@ -73,7 +73,7 @@ function App() {
       localStorage.setItem(LS_KEYS.CONFIG, JSON.stringify(appConfig));
   }, [appConfig]);
 
-  // --- AUTO REFRESH (2 Minutes) ---
+  // --- AUTO REFRESH (15 Minutes) ---
   useEffect(() => {
     if (!currentUser || !scriptUrl) return;
 
@@ -85,7 +85,7 @@ function App() {
     const interval = setInterval(() => {
       console.log("Auto refreshing data...");
       handleRefresh(true); // Trigger silent refresh
-    }, 2 * 60 * 1000); // 2 minutes
+    }, 15 * 60 * 1000); // 15 minutes
 
     return () => clearInterval(interval);
   }, [currentUser, scriptUrl]); 
@@ -282,6 +282,40 @@ function App() {
     }
   };
 
+  // Used for Yearly Statistics
+  const handleLoadAllMonths = async (year: string) => {
+      if (!scriptUrl) return;
+      setIsRefreshing(true);
+      try {
+          // Filter all sheets that are BC and match year (or just match T01..T12 if year implicit)
+          // We need "BC" sheets because statistics are derived from them
+          const yearSuffix = `-${year}`;
+          const bcSheets = sheetNames.filter(name => {
+              // Strict matching with year if present, otherwise flexible
+              if (name.includes(yearSuffix) && name.includes('BC')) return true;
+              // If no year in name, we might just fetch all BC-Txx
+              if (name.includes('BC') && !name.match(/-\d{4}$/)) return true;
+              return false;
+          });
+
+          // Filter out what we already have
+          const toFetch = bcSheets.filter(s => !sheetCache.current[s]);
+          
+          if (toFetch.length > 0) {
+             console.log("Fetching yearly data...", toFetch);
+             await Promise.all(toFetch.map(async (name) => {
+                try {
+                    const data = await fetchSheetData(scriptUrl, name);
+                    sheetCache.current[name] = data; 
+                } catch (err) { console.error(err); }
+             }));
+             setCacheVersion(v => v + 1);
+          }
+      } finally {
+          setIsRefreshing(false);
+      }
+  };
+
   const handleSheetChange = async (sheetName: string) => {
     if (scriptUrl) {
        // When user switches tab, show loading spinner (showLoading=true) but allow cache (forceRefresh=false)
@@ -405,10 +439,15 @@ function App() {
                     Truy cập Báo Cáo
                   </button>
                   <button 
-                    onClick={() => setActiveTab('operations')}
+                    onClick={() => {
+                        // Pass props to dashboard via activeTab=reports but change category logic if needed.
+                        // Here we just switch tabs.
+                        // For TH stats: user goes to Reports -> Clicks 'Thống kê'
+                        setActiveTab('reports');
+                    }}
                     className="col-span-2 py-3 bg-white border border-gray-300 text-vnpt-primary rounded-lg font-bold hover:bg-blue-50 transition-all shadow-sm"
                   >
-                    Truy cập Nghiệp vụ
+                    Truy cập Thống kê
                   </button>
                   {currentUser.role === 'ADMIN' && (
                     <button 
@@ -442,7 +481,27 @@ function App() {
         pendingCount={pendingCount}
       />
       <main className="flex-1 overflow-hidden relative flex flex-col">
-        {renderContent()}
+         {/* Pass handleLoadAllMonths to Dashboard via renderContent -> Dashboard */}
+         {activeTab === 'reports' ? (
+              <Dashboard 
+                data={currentSheetData} 
+                availableSheets={sheetNames}
+                currentSheetName={selectedSheetName}
+                onSheetChange={handleSheetChange}
+                scriptUrl={scriptUrl}
+                onRefresh={() => handleRefresh(false)}
+                spreadsheetUrl={spreadsheetUrl}
+                onUrlUpdate={handleUrlUpdate}
+                user={currentUser}
+                isRefreshing={isRefreshing || loadingState === LoadingState.LOADING}
+                appConfig={appConfig}
+                getDataBySheetName={getDataBySheetName}
+                cacheVersion={cacheVersion}
+                initialCategory="BC"
+                onLoadAllMonths={handleLoadAllMonths}
+                key="dashboard-bc"
+              />
+         ) : renderContent()}
       </main>
     </div>
   );

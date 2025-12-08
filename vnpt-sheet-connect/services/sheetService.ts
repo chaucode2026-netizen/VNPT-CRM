@@ -170,11 +170,12 @@ export const saveSheetRow = async (scriptUrl: string, sheetName: string, rowData
 };
 
 // Create Month Sheets
-export const createMonthSheets = async (scriptUrl: string, month: string): Promise<{ success: boolean, spreadsheetUrl?: string }> => {
+export const createMonthSheets = async (scriptUrl: string, month: string, year: number): Promise<{ success: boolean, spreadsheetUrl?: string }> => {
   try {
     const payload = JSON.stringify({
       action: 'createMonthSheets',
-      month: month
+      month: month,
+      year: year // ADDED YEAR PARAMETER
     });
 
     const response = await fetch(scriptUrl, {
