@@ -3,7 +3,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { SheetData, SheetRow, User, AppConfig } from '../types';
 import { EntryModal } from './EntryModal';
 import { LeaveModal } from './LeaveModal';
-import { saveSheetRow, createMonthSheets } from '../services/sheetService';
+import { saveSheetRow, createMonthSheets, createNVSheets } from '../services/sheetService';
+
+// Added 'NV' (Nghiệp vụ) to Category Type
+type SheetCategory = 'BC' | 'NV' | 'BF' | 'TH' | 'KH';
+type NghiepVuTab = 'Di động' | 'BRCĐ' | 'CNTT' | 'ONLINE';
 
 interface DashboardProps {
   data: SheetData;
@@ -18,7 +22,8 @@ interface DashboardProps {
   isRefreshing?: boolean;
   appConfig: AppConfig;
   getDataBySheetName: (name: string) => SheetData | undefined;
-  cacheVersion?: number; 
+  cacheVersion?: number;
+  initialCategory?: SheetCategory; // Added prop
 }
 
 // Columns for Report view
@@ -65,7 +70,22 @@ const getDaysArray = (monthStr: string) => {
   });
 };
 
-type SheetCategory = 'BC' | 'BF' | 'TH' | 'KH';
+const getDayLabel = (dayStr: string, monthStr: string, year: number) => {
+  try {
+    const date = new Date(year, parseInt(monthStr, 10) - 1, parseInt(dayStr, 10));
+    const day = date.getDay(); // 0 = Sun
+    const map = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    return map[day];
+  } catch {
+    return '';
+  }
+};
+
+const getWeekendClass = (label: string) => {
+  if (label === 'CN') return 'bg-red-50 text-red-700';
+  if (label === 'T7') return 'bg-yellow-50 text-yellow-700';
+  return '';
+};
 
 const parseVal = (val: any): number => {
   if (!val) return 0;
@@ -90,7 +110,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   isRefreshing = false,
   appConfig,
   getDataBySheetName,
-  cacheVersion = 0
+  cacheVersion = 0,
+  initialCategory = 'BC'
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -100,9 +121,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return currentMonth < 10 ? `0${currentMonth}` : `${currentMonth}`;
   });
   
-  const [activeCategory, setActiveCategory] = useState<SheetCategory>('BC');
+  const [activeCategory, setActiveCategory] = useState<SheetCategory>(initialCategory);
+  const [nvSubTab, setNvSubTab] = useState<NghiepVuTab>('Di động');
   const currentYear = new Date().getFullYear();
   
+  // Update category if initialCategory changes (e.g. from nav bar)
+  useEffect(() => {
+    setActiveCategory(initialCategory);
+  }, [initialCategory]);
+
   // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false); // For BC (EntryModal)
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false); // For BF (LeaveModal)
@@ -113,7 +140,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // --- AUTO-SWITCH MONTH LOGIC ---
   useEffect(() => {
-    if (availableSheets.length === 0) return;
+    // Skip auto-switch month if in NV mode (Operations don't use months)
+    if (availableSheets.length === 0 || activeCategory === 'NV') return;
 
     const availableMonths = [...new Set(availableSheets
       .map(name => {
@@ -130,15 +158,30 @@ export const Dashboard: React.FC<DashboardProps> = ({
         setSelectedMonth(latestMonth);
       }
     }
-  }, [availableSheets]); 
+  }, [availableSheets, activeCategory]); 
 
 
   // --- DERIVED STATE ---
   const targetSheetName = useMemo(() => {
+    // --- SPECIAL LOGIC FOR NGHIỆP VỤ (NV) ---
+    // Instead of looking for T{Month}, look for specific sheets based on SubTab
+    if (activeCategory === 'NV') {
+        const subTabMap: Record<NghiepVuTab, string> = {
+            'Di động': 'NV_DIDONG',
+            'BRCĐ': 'NV_BRCD',
+            'CNTT': 'NV_CNTT',
+            'ONLINE': 'NV_ONLINE'
+        };
+        const keyword = subTabMap[nvSubTab];
+        // Find sheet that matches the keyword (e.g. "NV_DIDONG")
+        return availableSheets.find(s => s.toUpperCase().includes(keyword)) || '';
+    }
+
+    // --- LOGIC FOR REPORTS (BC, BF, KH, TH) ---
     const monthPattern = selectedMonth.length === 1 ? `0${selectedMonth}` : selectedMonth;
     const suffix = `-T${monthPattern}`;
 
-    const searchType = activeCategory === 'TH' ? 'BC' : activeCategory;
+    const searchType = (activeCategory === 'TH') ? 'BC' : activeCategory;
 
     return availableSheets.find(name => {
       const nameUpper = name.toUpperCase();
@@ -148,7 +191,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (searchType === 'KH') return nameUpper.includes('KH') || nameUpper.includes('KE'); 
       return false;
     });
-  }, [availableSheets, selectedMonth, activeCategory]);
+  }, [availableSheets, selectedMonth, activeCategory, nvSubTab]);
 
   useEffect(() => {
     if (targetSheetName && targetSheetName !== currentSheetName) {
@@ -230,7 +273,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // --- HELPERS ---
   const canCreateMonth = user.role === 'ADMIN';
-  const canAddBCData = (user.role === 'ADMIN' || user.role === 'LEADER') && activeCategory === 'BC' && !!targetSheetName;
+  const canAddBCData = (user.role === 'ADMIN' || user.role === 'LEADER') && (activeCategory === 'BC' || activeCategory === 'NV') && !!targetSheetName;
   const canAddBFData = user.role === 'ADMIN' && activeCategory === 'BF' && !!targetSheetName;
   const canAddKHData = user.role === 'ADMIN' && activeCategory === 'KH' && !!targetSheetName;
 
@@ -242,10 +285,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
     if (activeCategory === 'TH') {
       return ['STT', 'Giảng Viên'];
     }
+    // NV uses same columns as BC
     return REPORT_COLUMNS;
   }, [activeCategory, selectedMonth]);
 
   const filteredRows = useMemo(() => {
+    // 1. Thống Kê
     if (activeCategory === 'TH') {
        if (!statisticsData) return [];
        return statisticsData.filter((row: any) => 
@@ -253,13 +298,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
        );
     }
 
-    // --- LOGIC GỘP DÒNG CHO BF VÀ KH ---
-    // Điều này đảm bảo mỗi giảng viên chỉ hiện 1 dòng duy nhất, gộp dữ liệu từ nhiều dòng trùng trong sheet
+    // 2. Nghiệp Vụ (Specific Sheets)
+    // We are now loading dedicated sheets for each sub-tab, so no complex filtering needed
+    // Just simple search
+    if (activeCategory === 'NV') {
+       if (!data || !data.rows) return [];
+       return data.rows.filter(row => 
+          Object.values(row).some((val) => 
+            String(val).toLowerCase().includes(searchTerm.toLowerCase())
+          )
+       );
+    }
+
+    // 3. Kế Hoạch & Bù Phép (Merge Logic)
     if (activeCategory === 'KH' || activeCategory === 'BF') {
-         // 1. Prepare Data Sources
          const monthId = `T${selectedMonth.length === 1 ? `0${selectedMonth}` : selectedMonth}`;
          
-         // Sibling Data (Only needed for KH mainly, but good to have)
          const bfName = availableSheets.find(s => {
              const upper = s.toUpperCase();
              return (upper.includes('BF') || upper.includes('BU')) && upper.includes(monthId);
@@ -272,61 +326,49 @@ export const Dashboard: React.FC<DashboardProps> = ({
          const bfData = bfName ? getDataBySheetName(bfName) : undefined;
          const bcData = bcName ? getDataBySheetName(bcName) : undefined;
 
-         // 2. Build Master List of Instructors (Config + Data)
-         const allInstructorsSet = new Set(appConfig.instructors || []);
-         // If we are in BF/KH, we should also show instructors present in the actual sheet data
+         const allInstructorsSet = new Set<string>(appConfig.instructors || []);
          if (data && data.rows) {
              data.rows.forEach(r => {
                  const name = r['Giảng Viên'] || r['GV'] || r['Họ và tên'];
-                 if (name) allInstructorsSet.add(name.trim());
+                 if (name) allInstructorsSet.add(String(name).trim());
              });
          }
          const sortedInstructors = [...allInstructorsSet].sort();
          const daysArray = getDaysArray(selectedMonth);
 
-         // 3. Map & Merge Loop
-         const calculatedRows = sortedInstructors.map((instructor, idx) => {
+         const calculatedRows = sortedInstructors.map((instructor: string, idx) => {
             const rowObj: SheetRow = {
               'STT': (idx + 1).toString(),
               'Giảng Viên': instructor
             };
 
-            // A. MERGE DUPLICATES FROM CURRENT SHEET (The "Pull Back" Fix)
-            // If the sheet has 2 rows for "Hạnh", we merge them here into `rowObj`
+            // Merge logic from current data
             if (data && data.rows) {
                 const matches = data.rows.filter(r => {
                     const rName = (r['Giảng Viên'] || r['GV'] || r['Họ và tên']) as string;
                     return normalize(rName) === normalize(instructor);
                 });
-                // Combine all matches. Later values overwrite earlier ones for same keys, 
-                // but since these are day columns, they should ideally be distinct or we just take the last one.
                 matches.forEach(m => {
                     Object.keys(m).forEach(key => {
-                        // Avoid overwriting identity keys, merge the rest (day columns)
                         if (key !== 'STT' && key !== 'Giảng Viên' && key !== 'GV' && m[key]) {
-                            rowObj[key] = m[key] as string;
+                            rowObj[key] = String((m as any)[key]);
                         }
                     });
                 });
             }
 
-            // B. SPECIFIC LOGIC FOR 'KH' (Plan) - Fetch from siblings
+            // Fetch from siblings if Plan (KH)
             if (activeCategory === 'KH') {
                 daysArray.forEach(day => {
-                    // Only fill if empty (Manual Plan > Auto Data) or if we want to show suggestions
-                    // Here we follow the logic: If Manual Data exists (merged above), use it. 
-                    // If not, try to fetch from BF/BC.
-                    
                     const dayKey = day;
                     const dayNumKey = parseInt(day, 10).toString();
                     
                     if (!rowObj[day] && !rowObj[dayNumKey]) {
                         let cellContent = '';
 
-                        // Check BF
                         if (bfData && bfData.rows) {
                              const bfRow = bfData.rows.find(r => {
-                                const rName = (r['Giảng Viên'] || r['GV'] || r['Họ và tên']) as string;
+                                const rName = String(r['Giảng Viên'] || r['GV'] || r['Họ và tên'] || '');
                                 return normalize(rName) === normalize(instructor);
                              });
                              if (bfRow) {
@@ -334,26 +376,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                              }
                         }
 
-                        // Check BC
                         if (!cellContent && bcData && bcData.rows) {
                              const matchingBC = bcData.rows.filter(r => {
-                                const rName = (r['Giảng Viên'] || r['GV']) as string;
-                                const rDate = r['Ngày'] as string;
-                                
+                                const rName = String(r['Giảng Viên'] || r['GV'] || '');
+                                const rDate = String(r['Ngày'] || '');
                                 if (normalize(rName) !== normalize(instructor)) return false;
                                 if (!rDate) return false;
-
                                 const dateStr = rDate.toString().trim();
                                 const parts = dateStr.split(/[-/]/);
                                 if (parts.length >= 2) {
                                     let d = 0, m = 0;
-                                    if (parts[0].length === 4) {
-                                       m = parseInt(parts[1], 10);
-                                       d = parseInt(parts[2], 10);
-                                    } else {
-                                       d = parseInt(parts[0], 10);
-                                       m = parseInt(parts[1], 10);
-                                    }
+                                    if (parts[0].length === 4) { m = parseInt(parts[1], 10); d = parseInt(parts[2], 10); } 
+                                    else { d = parseInt(parts[0], 10); m = parseInt(parts[1], 10); }
                                     return d === parseInt(day, 10) && m === parseInt(selectedMonth, 10);
                                 }
                                 return false;
@@ -361,8 +395,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                              
                              if (matchingBC.length > 0) {
                                 const lines = matchingBC.map(item => {
-                                   const maLop = (item['Mã Lớp'] || item['Nội dung'] || '?') as string;
-                                   const buoi = (item['Buổi'] || '') as string;
+                                   const maLop = String(item['Mã Lớp'] || item['Nội dung'] || '?');
+                                   const buoi = String(item['Buổi'] || '');
                                    return `${maLop} - ${buoi}`;
                                 });
                                 cellContent = lines.join('\n');
@@ -375,26 +409,31 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     }
                 });
             }
-            
             return rowObj;
          });
 
-         // Final Filter by Search
          return calculatedRows.filter(row => 
              row['Giảng Viên'].toLowerCase().includes(searchTerm.toLowerCase())
          );
     }
 
-    // Default Fallback (should ideally not be reached if categories cover all)
+    // Default Fallback (BC)
     if (!data || !data.rows) return [];
     return data.rows.filter(row => 
       Object.values(row).some((val) => 
         (val as string).toLowerCase().includes(searchTerm.toLowerCase())
       )
     );
-  }, [data, statisticsData, searchTerm, activeCategory, targetSheetName, appConfig, updateTrigger, selectedMonth, availableSheets, getDataBySheetName, cacheVersion]);
+  }, [data, statisticsData, searchTerm, activeCategory, nvSubTab, targetSheetName, appConfig, updateTrigger, selectedMonth, availableSheets, getDataBySheetName, cacheVersion]);
 
-  const getCellColor = (value: string, header: string) => {
+  const getCellColor = (value: string, header: string, dayLabel?: string) => {
+    // 1. Highlight Weekends for KH/BF (Column based)
+    if (dayLabel) {
+       if (dayLabel === 'CN') return 'bg-red-50 text-red-900';
+       if (dayLabel === 'T7') return 'bg-yellow-50 text-yellow-900';
+    }
+
+    // 2. Highlight Specific Content for KH/BF
     if (activeCategory === 'BF' || activeCategory === 'KH') {
         if (header !== 'STT' && header !== 'Giảng Viên') {
             const val = value?.toLowerCase().trim();
@@ -404,6 +443,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
     }
 
+    // 3. Highlight Percentage
     if (typeof value === 'string' && value.includes('%')) {
        const num = parseFloat(value);
        if (!isNaN(num)) {
@@ -412,6 +452,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
          return 'text-blue-600';
        }
     }
+    
+    // 4. Highlight specific cells for BC view (T7/CN)
+    if ((activeCategory === 'BC' || activeCategory === 'NV') && (header === 'Ngày' || header === 'Thứ')) {
+        const val = value?.trim().toLowerCase();
+        if (val === 'cn' || val === 'chủ nhật' || (header === 'Ngày' && (new Date(value).getDay() === 0))) return 'bg-red-100 text-red-700 font-bold';
+        if (val === 't7' || val === 'thứ 7' || val === 'thứ bảy' || (header === 'Ngày' && (new Date(value).getDay() === 6))) return 'bg-yellow-100 text-yellow-700 font-bold';
+    }
+
     if (value && !isNaN(Number(value)) && Number(value) > 0) {
        return 'font-medium text-gray-900';
     }
@@ -438,41 +486,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setUpdateTrigger(prev => prev + 1);
   };
 
-  // --- SAVE BF/KH DATA (STRICT UPSERT FIX) ---
   const handleSaveMatrix = async (dateStr: string, content: string, instructor: string) => {
     if (!targetSheetName) return;
 
     const headers = data.headers || [];
-
-    // 1. Resolve Date Key (e.g. "05" or "5")
     const dayParts = dateStr.split('-');
-    const day = dayParts[2]; // "05"
-    const dayNum = parseInt(day, 10).toString(); // "5"
+    const day = dayParts[2]; 
+    const dayNum = parseInt(day, 10).toString();
     
-    // Check if the header specifically contains "05" or "5" to decide which key to use
     let dayKey = day;
     if (headers.includes(day)) dayKey = day;
     else if (headers.includes(dayNum)) dayKey = dayNum;
 
-    // 2. Resolve Instructor Key (CASE-INSENSITIVE MATCHING)
-    // Find the ACTUAL header string in the sheet (e.g., "GIẢNG VIÊN", "Giảng Viên", "GV", "Họ và tên")
-    // This exact string must be sent to the backend as `matchColumn` to find the row.
-    let instructorKey = 'Giảng Viên'; // Default fallback
-    
+    let instructorKey = 'Giảng Viên'; 
     const foundHeader = headers.find(h => {
         const lower = h.trim().toLowerCase();
         return lower === 'giảng viên' || lower === 'gv' || lower === 'họ và tên';
     });
+    if (foundHeader) instructorKey = foundHeader;
 
-    if (foundHeader) {
-        instructorKey = foundHeader;
-    }
-
-    // 3. Local Update (Optimistic UI)
     const normalize = (s: any) => String(s || '').trim().toLowerCase();
     const targetName = normalize(instructor);
 
-    // Find existing row using the resolved key or fallbacks
     const rowIndex = data.rows.findIndex(r => {
         let rName = r[instructorKey];
         if (!rName) rName = r['Giảng Viên'] || r['GV'] || r['Họ và tên'];
@@ -480,34 +515,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
     });
 
     if (rowIndex >= 0) {
-        // UPDATE EXISTING ROW
         data.rows[rowIndex] = {
             ...data.rows[rowIndex],
             [dayKey]: content,
-            [day]: content,      // Ensure both formats exist for renderer
+            [day]: content,
             [dayNum]: content
         };
     } else {
-        // INSERT NEW ROW
         const newRow: SheetRow = {
             'STT': (data.rows.length + 1).toString(),
             [instructorKey]: instructor,
             [dayKey]: content,
-            'Giảng Viên': instructor, // Normalized key for renderer
+            'Giảng Viên': instructor,
             [day]: content
         };
         data.rows.push(newRow);
     }
-
     setUpdateTrigger(prev => prev + 1);
 
-    // 4. Send to Backend
     const rowData: SheetRow = {
       [instructorKey]: instructor,
       [dayKey]: content
     };
-
-    // Pass the EXACT `instructorKey` found in headers as `matchColumn`
     await saveSheetRow(scriptUrl, targetSheetName, rowData, instructorKey);
   };
 
@@ -527,12 +556,27 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setIsCreating(false);
     }
   };
+  
+  const handleCreateNVSheets = async () => {
+    setIsCreating(true);
+    try {
+      const res = await createNVSheets(scriptUrl);
+      if (res.success) {
+          await onRefresh(); 
+          alert("Đã khởi tạo các sheet Nghiệp vụ thành công!");
+      }
+    } catch (error) {
+      alert("Lỗi khởi tạo: " + error);
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   const nextStt = (data.rows?.length || 0) + 1;
 
   // --- RENDERERS ---
-
   const renderTableHeader = () => {
+    // 1. THỐNG KÊ (TH)
     if (activeCategory === 'TH') {
       return (
         <thead className="sticky top-0 z-20 shadow-sm text-center bg-white">
@@ -558,22 +602,51 @@ export const Dashboard: React.FC<DashboardProps> = ({
       );
     }
 
+    // 2. KẾ HOẠCH (KH) & BÙ PHÉP (BF) - Double Header Row
+    if (activeCategory === 'KH' || activeCategory === 'BF') {
+      const days = selectedMonth ? getDaysArray(selectedMonth) : [];
+      return (
+        <thead className="sticky top-0 z-20 shadow-sm text-center bg-white">
+          {/* Row 1: Day of Week (Thứ) */}
+          <tr className="bg-gray-100">
+            <th rowSpan={2} className="px-2 py-2 border border-gray-300 text-gray-600 font-bold sticky left-0 z-30 w-12 border-r-2 border-r-gray-300 bg-gray-100">STT</th>
+            <th rowSpan={2} className="px-4 py-2 border border-gray-300 text-gray-600 font-bold sticky left-12 z-30 min-w-[180px] text-left border-r-2 border-r-gray-300 bg-gray-100">GIẢNG VIÊN</th>
+            {days.map((day, idx) => {
+               const dayLabel = getDayLabel(day, selectedMonth, currentYear);
+               const weekendClass = getWeekendClass(dayLabel);
+               return (
+                 <th key={`dow-${idx}`} className={`px-1 py-1 border border-gray-300 text-[10px] font-bold ${weekendClass || 'text-gray-500 bg-gray-50'}`}>
+                   {dayLabel}
+                 </th>
+               );
+            })}
+          </tr>
+          {/* Row 2: Date (Ngày) */}
+          <tr className="bg-gray-50">
+            {days.map((day, idx) => {
+               const dayLabel = getDayLabel(day, selectedMonth, currentYear);
+               const weekendClass = getWeekendClass(dayLabel);
+               return (
+                  <th key={`date-${idx}`} className={`px-2 py-2 border border-gray-300 text-[11px] font-bold ${weekendClass || 'text-gray-700'} min-w-[40px] ${activeCategory === 'KH' ? 'min-w-[150px]' : ''}`}>
+                    {day}
+                  </th>
+               );
+            })}
+          </tr>
+        </thead>
+      );
+    }
+
+    // 3. BÁO CÁO (BC) / NGHIỆP VỤ (NV) - Single Header Row
     return (
       <thead className="bg-gray-100 sticky top-0 z-20 shadow-sm">
         <tr>
           {currentColumns.map((header, idx) => {
-            // Determine if this is a date column (01, 02, etc.)
-            const isDateCol = (activeCategory === 'BF' || activeCategory === 'KH') && !isNaN(Number(header));
-            
             return (
               <th key={idx} className={`px-2 py-3 border border-gray-300 text-[11px] font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap text-center
                   ${header === 'STT' ? 'sticky left-0 bg-gray-100 z-30 border-r-2 border-r-gray-300 w-12' : ''}
-                  ${(header === 'Giảng Viên' && (activeCategory === 'BF' || activeCategory === 'KH')) ? 'sticky left-12 bg-gray-100 z-30 border-r-2 border-r-gray-300 min-w-[180px] text-left px-4' : ''}
                   ${header === 'Mã Lớp' ? 'min-w-[100px]' : ''}
                   ${header === 'Nội dung' ? 'min-w-[250px] text-left px-3' : ''}
-                  
-                  ${isDateCol && activeCategory === 'BF' ? 'w-10 min-w-[2.5rem]' : ''}
-                  ${isDateCol && activeCategory === 'KH' ? 'min-w-[150px]' : ''}
               `}>
                 {header}
               </th>
@@ -600,20 +673,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <tr key={rIdx} className="hover:bg-blue-50 transition-colors">
           <td className="px-2 py-1 text-xs border border-gray-200 text-center sticky left-0 bg-white border-r-2 border-r-gray-300 z-10 font-mono text-gray-700">{row['STT']}</td>
           <td className="px-4 py-1 text-xs border border-gray-200 text-left sticky left-12 bg-white border-r-2 border-r-gray-300 z-10 font-bold whitespace-nowrap text-gray-800">{row['Giảng Viên']}</td>
-          
           {TH_GROUPS.map(group => 
              group.keys.map((key, kIdx) => {
                const val = row[key]; 
                const num = Number(val);
                const hasValue = val && !isNaN(num) && num > 0;
-               
                let cellClass = hasValue ? 'font-bold text-gray-900' : 'text-gray-400';
                if (hasValue && key.endsWith('Tong')) {
                  if (key.startsWith('M_')) cellClass = 'font-bold text-blue-700 bg-blue-50';
                  else if (key.startsWith('HH_')) cellClass = 'font-bold text-green-700 bg-green-50';
                  else if (key.startsWith('ALL_')) cellClass = 'font-bold text-red-600 bg-red-50';
                }
-
                return (
                  <td key={`${group.title}-${key}-${kIdx}`} className={`px-2 py-1 text-xs border border-gray-200 text-center ${cellClass}`}>
                    {hasValue ? val : '-'}
@@ -631,6 +701,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
           const value = getRowValue(row, header);
           const isDateCol = (activeCategory === 'BF' || activeCategory === 'KH') && !isNaN(Number(header));
           
+          let dayLabel = '';
+          if (isDateCol) {
+             dayLabel = getDayLabel(header, selectedMonth, currentYear);
+          }
+
           return (
             <td 
               key={cIdx} 
@@ -641,7 +716,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 ${isDateCol && activeCategory === 'KH' ? 'min-w-[150px] text-left' : ''}
                 ${isDateCol && activeCategory !== 'KH' ? 'text-center' : ''}
                 ${!isDateCol && header !== 'Nội dung' && header !== 'Giảng Viên' ? 'text-left' : ''}
-                ${getCellColor(value as string, header)}
+                ${getCellColor(value as string, header, dayLabel)}
               `}
               title={value as string}
             >
@@ -654,7 +729,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const renderContent = () => {
+    // Check loading first to avoid flickering
+    if (isRefreshing && (!targetSheetName || filteredRows.length === 0)) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full">
+            <div className="w-10 h-10 border-4 border-gray-200 border-t-vnpt-primary rounded-full animate-spin mb-4"></div>
+            <span className="text-gray-500 text-sm font-medium">Đang tải dữ liệu...</span>
+          </div>
+        );
+    }
+    
+    // If no sheet is selected/found (and not loading)
     if (!targetSheetName && activeCategory !== 'KH') {
+       const isNVMode = activeCategory === 'NV';
+       const message = isNVMode 
+         ? "Chưa có dữ liệu Nghiệp Vụ cho mục này."
+         : `Chưa có dữ liệu Tháng ${selectedMonth}/${currentYear}`;
+         
+       const btnAction = isNVMode ? handleCreateNVSheets : handleCreateMonth;
+       const btnText = isNVMode ? "Khởi tạo NV" : "Khởi tạo tháng";
+
        return (
          <div className="flex flex-col items-center justify-center h-full bg-gray-50/50">
            <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200 text-center max-w-md">
@@ -663,18 +757,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                  </svg>
               </div>
-              <h3 className="text-lg font-bold text-gray-800 mb-2">Chưa có dữ liệu Tháng {selectedMonth}/{currentYear}</h3>
+              <h3 className="text-lg font-bold text-gray-800 mb-2">{message}</h3>
               {canCreateMonth ? (
                 <>
-                  <p className="text-gray-500 text-sm mb-6">Bạn có muốn khởi tạo dữ liệu cho tháng này không?</p>
+                  <p className="text-gray-500 text-sm mb-6">Bạn có muốn khởi tạo dữ liệu không?</p>
                   <button 
-                    onClick={handleCreateMonth}
+                    onClick={btnAction}
                     disabled={isCreating}
                     className={`w-full py-2.5 rounded-md font-bold text-white shadow transition-all
                       ${isCreating ? 'bg-gray-400' : 'bg-vnpt-primary hover:bg-blue-700'}
                     `}
                   >
-                    {isCreating ? 'Đang khởi tạo...' : 'Khởi tạo ngay'}
+                    {isCreating ? 'Đang khởi tạo...' : btnText}
                   </button>
                 </>
               ) : (
@@ -684,15 +778,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
          </div>
        );
     }
-    
-    if (isRefreshing && filteredRows.length === 0) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full">
-            <div className="w-10 h-10 border-4 border-gray-200 border-t-vnpt-primary rounded-full animate-spin mb-4"></div>
-            <span className="text-gray-500 text-sm font-medium">Đang tải dữ liệu...</span>
-          </div>
-        );
-    }
 
     if (filteredRows.length === 0 && activeCategory !== 'TH') {
         return (
@@ -700,7 +785,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
              <svg className="w-16 h-16 mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
              </svg>
-             <p className="text-sm font-medium">Bảng tính trống</p>
+             <p className="text-sm font-medium">Không tìm thấy dữ liệu phù hợp</p>
              {(canAddBCData || canAddBFData || canAddKHData) && <p className="text-xs mt-1">Sử dụng nút "Thêm mới" / "ADD" để nhập liệu</p>}
           </div>
         );
@@ -736,126 +821,164 @@ export const Dashboard: React.FC<DashboardProps> = ({
         }
       `}</style>
 
-      <div className="border-b border-gray-200 px-4 py-3 bg-white flex flex-col lg:flex-row lg:items-center justify-between gap-4 sticky top-0 z-30 shadow-sm">
+      <div className="border-b border-gray-200 px-4 py-3 bg-white flex flex-col z-30 shadow-sm sticky top-0">
         
-        <div className="flex items-center gap-6 overflow-x-auto no-scrollbar">
-          <div className="flex items-center space-x-2 bg-gray-50 rounded-md border border-gray-200 px-3 py-1.5 whitespace-nowrap">
-             <span className="text-gray-500 text-sm font-medium">Tháng:</span>
-             <select 
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="bg-transparent font-bold text-vnpt-primary outline-none cursor-pointer min-w-[50px]"
-             >
-                {ALL_MONTHS.map(m => (
-                  <option key={m} value={m}>{m}/{currentYear}</option>
-                ))}
-             </select>
-          </div>
-          
-          <div className="h-6 w-px bg-gray-300 hidden md:block"></div>
-
-          <div className="flex items-center space-x-2">
-            <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg whitespace-nowrap">
-              {[
-                { id: 'BC', label: 'Báo cáo' },
-                { id: 'BF', label: 'Bù Phép' },
-                { id: 'TH', label: 'Thống kê' },
-                { id: 'KH', label: 'Kế hoạch' },
-              ].map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveCategory(tab.id as SheetCategory)}
-                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all
-                    ${activeCategory === tab.id 
-                      ? 'bg-white text-vnpt-primary shadow-sm font-bold' 
-                      : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
-                    }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-2">
-             <button
-               onClick={() => onRefresh()}
-               disabled={isRefreshing}
-               className="p-2 rounded-full hover:bg-gray-100 text-gray-600 transition-all"
-               title="Làm mới dữ liệu"
-             >
-               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-               </svg>
-             </button>
-             {spreadsheetUrl && (
-              <a
-                href={spreadsheetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 border border-green-700 transition-all font-bold text-sm shadow whitespace-nowrap"
-                title="Mở Google Sheet"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path fillRule="evenodd" d="M19.5 21a1.5 1.5 0 001.5-1.5V15a.75.75 0 00-1.5 0v3a.75.75 0 00.75.75zm-15 0a.75.75 0 00.75-.75v-3a.75.75 0 00-1.5 0v3a1.5 1.5 0 001.5 1.5zM3 7.5a.75.75 0 01.75-.75h16.5a.75.75 0 010 1.5H3.75A.75.75 0 013 7.5z" clipRule="evenodd" />
-                  <path d="M19.5 3H4.5A1.5 1.5 0 003 4.5v15A1.5 1.5 0 004.5 21h15a1.5 1.5 0 001.5-1.5v-15A1.5 1.5 0 0019.5 3zM4.5 4.5h15v15h-15v-15z" />
-                </svg>
-                <span className="hidden sm:inline">Mở Sheet</span>
-              </a>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex items-center gap-6 overflow-x-auto no-scrollbar">
+            
+            {/* Show Month Selector ONLY if NOT in NV (Nghiệp Vụ) */}
+            {activeCategory !== 'NV' && (
+              <>
+                <div className="flex items-center space-x-2 bg-gray-50 rounded-md border border-gray-200 px-3 py-1.5 whitespace-nowrap">
+                    <span className="text-gray-500 text-sm font-medium">Tháng:</span>
+                    <select 
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        className="bg-transparent font-bold text-vnpt-primary outline-none cursor-pointer min-w-[50px]"
+                    >
+                        {ALL_MONTHS.map(m => (
+                        <option key={m} value={m}>{m}/{currentYear}</option>
+                        ))}
+                    </select>
+                </div>
+                
+                <div className="h-6 w-px bg-gray-300 hidden md:block"></div>
+              </>
             )}
-          </div>
-        </div>
 
-        <div className="flex items-center gap-3 w-full lg:w-auto">
-          <div className="relative group w-full lg:w-64">
-             <div className="flex items-center border border-gray-300 rounded-md overflow-hidden focus-within:ring-1 focus-within:ring-vnpt-primary focus-within:border-vnpt-primary transition-all bg-gray-50">
-               <input
-                type="text"
-                placeholder="Tìm kiếm..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                disabled={!targetSheetName && activeCategory !== 'KH'}
-                className="w-full px-3 py-1.5 text-sm outline-none bg-transparent disabled:opacity-50"
-              />
+            <div className="flex items-center space-x-2">
+                {/* HIDE TABS IF IN NV MODE */}
+                {activeCategory !== 'NV' && (
+                  <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg whitespace-nowrap">
+                  {[
+                      { id: 'BC', label: 'Báo cáo' },
+                      // Removed 'NV' from internal tabs
+                      { id: 'BF', label: 'Bù Phép' },
+                      { id: 'TH', label: 'Thống kê' },
+                      { id: 'KH', label: 'Kế hoạch' },
+                  ].map((tab) => (
+                      <button
+                      key={tab.id}
+                      onClick={() => setActiveCategory(tab.id as SheetCategory)}
+                      className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all
+                          ${activeCategory === tab.id 
+                          ? 'bg-white text-vnpt-primary shadow-sm font-bold' 
+                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                          }`}
+                      >
+                      {tab.label}
+                      </button>
+                  ))}
+                  </div>
+                )}
+
+                {/* SHOW TITLE OR INDICATOR FOR NV MODE */}
+                {activeCategory === 'NV' && (
+                    <div className="px-4 py-1.5 bg-blue-50 text-vnpt-primary font-bold rounded-md border border-blue-100 text-sm uppercase">
+                        NGHIỆP VỤ ĐÀO TẠO
+                    </div>
+                )}
             </div>
-          </div>
 
-          {canAddBCData && (
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="flex items-center space-x-1 px-4 py-1.5 bg-vnpt-primary text-white rounded shadow hover:bg-blue-700 transition-transform active:scale-95 text-sm font-bold whitespace-nowrap"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              <span className="hidden sm:inline">Thêm mới</span>
-            </button>
-          )}
+            <div className="flex items-center space-x-2">
+                <button
+                onClick={() => onRefresh()}
+                disabled={isRefreshing}
+                className="p-2 rounded-full hover:bg-gray-100 text-gray-600 transition-all"
+                title="Làm mới dữ liệu"
+                >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                </button>
+                {spreadsheetUrl && (
+                <a
+                    href={spreadsheetUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 border border-green-700 transition-all font-bold text-sm shadow whitespace-nowrap"
+                    title="Mở Google Sheet"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path fillRule="evenodd" d="M19.5 21a1.5 1.5 0 001.5-1.5V15a.75.75 0 00-1.5 0v3a.75.75 0 00.75.75zm-15 0a.75.75 0 00.75-.75v-3a.75.75 0 00-1.5 0v3a1.5 1.5 0 001.5 1.5zM3 7.5a.75.75 0 01.75-.75h16.5a.75.75 0 010 1.5H3.75A.75.75 0 013 7.5z" clipRule="evenodd" />
+                    <path d="M19.5 3H4.5A1.5 1.5 0 003 4.5v15A1.5 1.5 0 004.5 21h15a1.5 1.5 0 001.5-1.5v-15A1.5 1.5 0 0019.5 3zM4.5 4.5h15v15h-15v-15z" />
+                    </svg>
+                    <span className="hidden sm:inline">Mở Sheet</span>
+                </a>
+                )}
+            </div>
+            </div>
 
-          {canAddBFData && (
-            <button 
-              onClick={() => setIsLeaveModalOpen(true)}
-              className="flex items-center space-x-1 px-4 py-1.5 bg-orange-600 text-white rounded shadow hover:bg-orange-700 transition-transform active:scale-95 text-sm font-bold whitespace-nowrap"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              <span className="hidden sm:inline">ADD</span>
-            </button>
-          )}
+            <div className="flex items-center gap-3 w-full lg:w-auto">
+            <div className="relative group w-full lg:w-64">
+                <div className="flex items-center border border-gray-300 rounded-md overflow-hidden focus-within:ring-1 focus-within:ring-vnpt-primary focus-within:border-vnpt-primary transition-all bg-gray-50">
+                <input
+                    type="text"
+                    placeholder="Tìm kiếm..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    disabled={!targetSheetName && activeCategory !== 'KH'}
+                    className="w-full px-3 py-1.5 text-sm outline-none bg-transparent disabled:opacity-50"
+                />
+                </div>
+            </div>
 
-          {canAddKHData && (
-            <button 
-              onClick={() => setIsPlanModalOpen(true)}
-              className="flex items-center space-x-1 px-4 py-1.5 bg-green-600 text-white rounded shadow hover:bg-green-700 transition-transform active:scale-95 text-sm font-bold whitespace-nowrap"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              <span className="hidden sm:inline">ADD</span>
-            </button>
-          )}
+            {canAddBCData && (
+                <button 
+                onClick={() => setIsModalOpen(true)}
+                className="flex items-center space-x-1 px-4 py-1.5 bg-vnpt-primary text-white rounded shadow hover:bg-blue-700 transition-transform active:scale-95 text-sm font-bold whitespace-nowrap"
+                >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="hidden sm:inline">Thêm mới</span>
+                </button>
+            )}
+
+            {canAddBFData && (
+                <button 
+                onClick={() => setIsLeaveModalOpen(true)}
+                className="flex items-center space-x-1 px-4 py-1.5 bg-orange-600 text-white rounded shadow hover:bg-orange-700 transition-transform active:scale-95 text-sm font-bold whitespace-nowrap"
+                >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                <span className="hidden sm:inline">ADD</span>
+                </button>
+            )}
+
+            {canAddKHData && (
+                <button 
+                onClick={() => setIsPlanModalOpen(true)}
+                className="flex items-center space-x-1 px-4 py-1.5 bg-green-600 text-white rounded shadow hover:bg-green-700 transition-transform active:scale-95 text-sm font-bold whitespace-nowrap"
+                >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                <span className="hidden sm:inline">ADD</span>
+                </button>
+            )}
+            </div>
         </div>
+
+        {/* --- Sub-Tabs for Nghiệp Vụ --- */}
+        {activeCategory === 'NV' && (
+            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center space-x-1 animate-[fadeIn_0.3s]">
+                <span className="text-xs font-bold text-gray-400 uppercase mr-2">Bộ lọc:</span>
+                {(['Di động', 'BRCĐ', 'CNTT', 'ONLINE'] as NghiepVuTab[]).map(tab => (
+                    <button
+                        key={tab}
+                        onClick={() => setNvSubTab(tab)}
+                        className={`px-3 py-1 text-xs font-bold rounded-full transition-all border
+                            ${nvSubTab === tab 
+                                ? 'bg-blue-100 text-vnpt-primary border-blue-200' 
+                                : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'}`}
+                    >
+                        {tab}
+                    </button>
+                ))}
+            </div>
+        )}
       </div>
 
       <div className="flex-1 overflow-hidden relative flex flex-col">

@@ -192,6 +192,28 @@ export const createMonthSheets = async (scriptUrl: string, month: string): Promi
   }
 };
 
+// Create Operations (NV) Sheets
+export const createNVSheets = async (scriptUrl: string): Promise<{ success: boolean }> => {
+  try {
+    const payload = JSON.stringify({
+      action: 'createNVSheets'
+    });
+
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: POST_HEADERS,
+      body: payload,
+    });
+    
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    return { success: true };
+  } catch (error) {
+    console.error("Error creating NV sheets:", error);
+    throw error;
+  }
+};
+
 // --- CONFIG API ---
 
 export const fetchAppConfig = async (scriptUrl: string): Promise<AppConfig> => {

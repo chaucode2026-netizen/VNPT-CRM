@@ -334,6 +334,29 @@ function App() {
                 appConfig={appConfig}
                 getDataBySheetName={getDataBySheetName}
                 cacheVersion={cacheVersion}
+                initialCategory="BC"
+                key="dashboard-bc"
+              />
+          );
+
+      case 'operations':
+          return (
+              <Dashboard 
+                data={currentSheetData} 
+                availableSheets={sheetNames}
+                currentSheetName={selectedSheetName}
+                onSheetChange={handleSheetChange}
+                scriptUrl={scriptUrl}
+                onRefresh={() => handleRefresh(false)}
+                spreadsheetUrl={spreadsheetUrl}
+                onUrlUpdate={handleUrlUpdate}
+                user={currentUser}
+                isRefreshing={isRefreshing || loadingState === LoadingState.LOADING}
+                appConfig={appConfig}
+                getDataBySheetName={getDataBySheetName}
+                cacheVersion={cacheVersion}
+                initialCategory="NV"
+                key="dashboard-nv"
               />
           );
 
@@ -380,6 +403,12 @@ function App() {
                     className="col-span-2 py-3 bg-vnpt-primary text-white rounded-lg font-bold hover:bg-blue-700 transition-all shadow-md hover:shadow-lg"
                   >
                     Truy cập Báo Cáo
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('operations')}
+                    className="col-span-2 py-3 bg-white border border-gray-300 text-vnpt-primary rounded-lg font-bold hover:bg-blue-50 transition-all shadow-sm"
+                  >
+                    Truy cập Nghiệp vụ
                   </button>
                   {currentUser.role === 'ADMIN' && (
                     <button 
