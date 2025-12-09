@@ -57,6 +57,7 @@ function App() {
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>('home'); 
   const [spreadsheetUrl, setSpreadsheetUrl] = useState<string>('');
+  const [masterUrl, setMasterUrl] = useState<string>(''); // NEW: Track the Master Sheet URL explicitly
   const [pendingCount, setPendingCount] = useState(0);
 
   // --- PERSISTENCE EFFECTS ---
@@ -131,6 +132,7 @@ function App() {
         const { sheetNames: names, spreadsheetUrl: url } = await fetchSheetNames(scriptUrl);
         setSheetNames(names);
         setSpreadsheetUrl(url || '');
+        setMasterUrl(url || ''); // Set master URL
         await loadAppConfig();
         
       } catch (e) {
@@ -159,6 +161,7 @@ function App() {
     setErrorMsg('');
     setLoadingState(LoadingState.IDLE);
     setPendingCount(0);
+    setMasterUrl('');
   };
 
   // --- DATA LOADING HANDLERS ---
@@ -173,7 +176,10 @@ function App() {
       // 1. Refresh Sheet List
       const { sheetNames: names, spreadsheetUrl: url } = await fetchSheetNames(scriptUrl);
       setSheetNames(names);
-      if (url) setSpreadsheetUrl(url);
+      if (url) {
+        setSpreadsheetUrl(url);
+        setMasterUrl(url); // Update master URL
+      }
       
       // 2. Refresh Config
       await loadAppConfig();
@@ -227,6 +233,13 @@ function App() {
         console.log(`Loaded ${sheetName} from cache`);
         setCurrentSheetData(sheetCache.current[sheetName]);
         
+        // FIX: Ensure correct URL is set from cache, fallback to Master if missing
+        if (sheetCache.current[sheetName].fileUrl) {
+            setSpreadsheetUrl(sheetCache.current[sheetName].fileUrl!);
+        } else {
+            setSpreadsheetUrl(masterUrl);
+        }
+        
         // Nếu các sheet phụ chưa có, tải ngầm (background fetch)
         const backgroundNeeded = sheetsToFetch.filter(s => !sheetCache.current[s]);
         if (backgroundNeeded.length > 0) {
@@ -269,8 +282,11 @@ function App() {
       // 5. Cập nhật UI cho sheet ĐÍCH
       if (sheetCache.current[sheetName]) {
         setCurrentSheetData(sheetCache.current[sheetName]);
+        // FIX: Reset URL to Master if child sheet has no specific URL (avoids sticky URL)
         if (sheetCache.current[sheetName].fileUrl) {
           setSpreadsheetUrl(sheetCache.current[sheetName].fileUrl!);
+        } else {
+          setSpreadsheetUrl(masterUrl);
         }
       }
     } catch (error) {
@@ -369,6 +385,7 @@ function App() {
                 getDataBySheetName={getDataBySheetName}
                 cacheVersion={cacheVersion}
                 initialCategory="BC"
+                onLoadAllMonths={handleLoadAllMonths}
                 key="dashboard-bc"
               />
           );

@@ -187,6 +187,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         `-T${unpaddedMonth}`           
     ];
 
+    // 1. Try to find an EXACT match in the loaded availableSheets list
     for (const suffix of suffixesToCheck) {
         const found = availableSheets.find(name => {
             const nameUpper = name.toUpperCase();
@@ -195,8 +196,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
         if (found) return found;
     }
 
+    // 2. FALLBACK: If not found in the list, CONSTRUCT a standard name.
+    // This allows the frontend to request a sheet (e.g., BC-T09-2025) even if it's in a separate file 
+    // that the frontend doesn't know about yet. The Backend Router will handle finding it.
+    if (!isYearlyMode) {
+        return `${searchType}-T${paddedMonth}-${yearStr}`;
+    }
+
     return '';
-  }, [availableSheets, selectedMonth, selectedYear, activeCategory, nvSubTab]);
+  }, [availableSheets, selectedMonth, selectedYear, activeCategory, nvSubTab, isYearlyMode]);
 
   useEffect(() => {
     // Only switch sheet if NOT in yearly mode
@@ -977,20 +985,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
                 </button>
-                {spreadsheetUrl && (
-                <a
-                    href={spreadsheetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 border border-green-700 transition-all font-bold text-sm shadow whitespace-nowrap"
-                    title="Mở Google Sheet"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                    <path fillRule="evenodd" d="M19.5 21a1.5 1.5 0 001.5-1.5V15a.75.75 0 00-1.5 0v3a.75.75 0 00.75.75zm-15 0a.75.75 0 00.75-.75v-3a.75.75 0 00-1.5 0v3a1.5 1.5 0 001.5 1.5zM3 7.5a.75.75 0 01.75-.75h16.5a.75.75 0 010 1.5H3.75A.75.75 0 013 7.5z" clipRule="evenodd" />
-                    <path d="M19.5 3H4.5A1.5 1.5 0 003 4.5v15A1.5 1.5 0 004.5 21h15a1.5 1.5 0 001.5-1.5v-15A1.5 1.5 0 0019.5 3zM4.5 4.5h15v15h-15v-15z" />
-                    </svg>
-                    <span className="hidden sm:inline">Mở Sheet</span>
-                </a>
+                {/* UPDATED: Open Sheet Button Logic */}
+                {/* Always show if not in NV mode, use data.fileUrl from backend which is specific to child sheet */}
+                {activeCategory !== 'NV' && (
+                  <a
+                      href={data.fileUrl || spreadsheetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-green-600 text-white hover:bg-green-700 border border-green-700 transition-all font-bold text-sm shadow whitespace-nowrap"
+                      title={`Mở file tháng ${selectedMonth}/${selectedYear}`}
+                  >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                      <path fillRule="evenodd" d="M19.5 21a1.5 1.5 0 001.5-1.5V15a.75.75 0 00-1.5 0v3a.75.75 0 00.75.75zm-15 0a.75.75 0 00.75-.75v-3a.75.75 0 00-1.5 0v3a1.5 1.5 0 001.5 1.5zM3 7.5a.75.75 0 01.75-.75h16.5a.75.75 0 010 1.5H3.75A.75.75 0 013 7.5z" clipRule="evenodd" />
+                      <path d="M19.5 3H4.5A1.5 1.5 0 003 4.5v15A1.5 1.5 0 004.5 21h15a1.5 1.5 0 001.5-1.5v-15A1.5 1.5 0 0019.5 3zM4.5 4.5h15v15h-15v-15z" />
+                      </svg>
+                      <span className="hidden sm:inline">
+                        {isYearlyMode ? `Sheet Năm ${selectedYear}` : `Mở Sheet T${selectedMonth}/${selectedYear}`}
+                      </span>
+                  </a>
                 )}
             </div>
             </div>
