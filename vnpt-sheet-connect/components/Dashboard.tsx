@@ -27,34 +27,35 @@ interface DashboardProps {
   onLoadAllMonths?: (year: string) => Promise<void>; // New prop for yearly data
 }
 
-// Columns for Report view
+// Columns for Report view (Updated with new keys)
 const REPORT_COLUMNS = [
   'STT', 'Mã Lớp', 'Nội dung', 'Buổi', 'Ngày', 'Thứ', 'Giảng Viên', 
-  '91', '66', '60', 'OL', 'KN', 'Coach', 'OKR', 'STL', 'OS', 'CT', 'HOC', 
+  'DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor', 'TTKD', 
+  'OKR', 'STL', 'OS', 'CT', 'HOC', 
   'Đơn vị', 'SL HV', 'Hình Thức', 'ĐTV'
 ];
 
 // Definition for Statistics (TH) View
-// CHANGED: Added 'Họp' back to ALL group
+// Updated: DĐ, BRCĐ, CNTT, AI Mentor, TTKD
 const TH_GROUPS = [
   { 
     title: 'ĐTV-M', 
     colorClass: 'bg-blue-50 text-blue-800 border-r-2 border-gray-300', 
-    cols: ['91', '66', '60', 'OL', 'KN', 'Coach', 'Tổng'],
-    keys: ['M_91', 'M_66', 'M_60', 'M_OL', 'M_KN', 'M_Coach', 'M_Tong']
+    cols: ['DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor', 'Tổng'],
+    keys: ['M_DD', 'M_BRCD', 'M_CNTT', 'M_OL', 'M_KN', 'M_Coach', 'M_AIMentor', 'M_Tong']
   },
   { 
     title: 'ĐTV-HH', 
     colorClass: 'bg-green-50 text-green-800 border-r-2 border-gray-300', 
-    cols: ['91', '66', '60', 'OL', 'KN', 'Coach', 'Tổng'],
-    keys: ['HH_91', 'HH_66', 'HH_60', 'HH_OL', 'HH_KN', 'HH_Coach', 'HH_Tong']
+    cols: ['DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor', 'Tổng'],
+    keys: ['HH_DD', 'HH_BRCD', 'HH_CNTT', 'HH_OL', 'HH_KN', 'HH_Coach', 'HH_AIMentor', 'HH_Tong']
   },
   { 
     title: 'ALL', 
     colorClass: 'bg-orange-50 text-orange-800', 
-    // Added 'Họp'
-    cols: ['91', '66', '60', 'OL', 'KN', 'Coach', 'OS', 'CT', 'OKR', 'STL', 'Họp', 'Học', 'Tổng'],
-    keys: ['ALL_91', 'ALL_66', 'ALL_60', 'ALL_OL', 'ALL_KN', 'ALL_Coach', 'ALL_OS', 'ALL_CT', 'ALL_OKR', 'ALL_STL', 'ALL_Hop', 'ALL_Hoc', 'ALL_Tong']
+    // Added 'Họp' and updated fields
+    cols: ['DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor', 'TTKD', 'OKR', 'STL', 'OS', 'CT', 'Họp', 'Học', 'Tổng'],
+    keys: ['ALL_DD', 'ALL_BRCD', 'ALL_CNTT', 'ALL_OL', 'ALL_KN', 'ALL_Coach', 'ALL_AIMentor', 'ALL_TTKD', 'ALL_OKR', 'ALL_STL', 'ALL_OS', 'ALL_CT', 'ALL_Hop', 'ALL_Hoc', 'ALL_Tong']
   }
 ];
 
@@ -268,10 +269,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
       if (!statsMap[gvKey]) {
         statsMap[gvKey] = {
           'Giảng Viên': gvKey,
-          'M_91': 0, 'M_66': 0, 'M_60': 0, 'M_OL': 0, 'M_KN': 0, 'M_Coach': 0, 'M_Tong': 0,
-          'HH_91': 0, 'HH_66': 0, 'HH_60': 0, 'HH_OL': 0, 'HH_KN': 0, 'HH_Coach': 0, 'HH_Tong': 0,
-          'ALL_91': 0, 'ALL_66': 0, 'ALL_60': 0, 'ALL_OL': 0, 'ALL_KN': 0, 'ALL_Coach': 0, 
-          'ALL_OS': 0, 'ALL_CT': 0, 'ALL_OKR': 0, 'ALL_STL': 0, 'ALL_Hop': 0, 'ALL_Hoc': 0, 'ALL_Tong': 0
+          'M_DD': 0, 'M_BRCD': 0, 'M_CNTT': 0, 'M_OL': 0, 'M_KN': 0, 'M_Coach': 0, 'M_AIMentor': 0, 'M_Tong': 0,
+          'HH_DD': 0, 'HH_BRCD': 0, 'HH_CNTT': 0, 'HH_OL': 0, 'HH_KN': 0, 'HH_Coach': 0, 'HH_AIMentor': 0, 'HH_Tong': 0,
+          'ALL_DD': 0, 'ALL_BRCD': 0, 'ALL_CNTT': 0, 'ALL_OL': 0, 'ALL_KN': 0, 'ALL_Coach': 0, 'ALL_AIMentor': 0,
+          'ALL_TTKD': 0, 'ALL_OS': 0, 'ALL_CT': 0, 'ALL_OKR': 0, 'ALL_STL': 0, 'ALL_Hop': 0, 'ALL_Hoc': 0, 'ALL_Tong': 0
         };
       }
 
@@ -279,23 +280,35 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const isM = dtvRaw.includes('M');
       const isHH = dtvRaw.includes('HH');
 
-      const metrics = ['91', '66', '60', 'OL', 'KN', 'Coach'];
+      // Updated metrics to match new columns
+      const metrics = ['DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor'];
       
       let rowSumM = 0;
       let rowSumHH = 0;
       let rowSumALL = 0;
 
+      // Sum metrics for M, HH and ALL
       metrics.forEach(metric => {
         const val = parseVal(row[metric]);
-        if (isM) { statsMap[gvKey][`M_${metric}`] += val; rowSumM += val; }
-        if (isHH) { statsMap[gvKey][`HH_${metric}`] += val; rowSumHH += val; }
-        statsMap[gvKey][`ALL_${metric}`] += val;
+        
+        // Map keys like 'DĐ' to 'DD', 'BRCĐ' to 'BRCD' for safety variable names if needed, 
+        // but here we use direct mapping from TH_GROUPS keys which match strict naming
+        // Key mapping: 'DĐ' -> 'DD', 'BRCĐ' -> 'BRCD'
+        let keySuffix = metric;
+        if(metric === 'DĐ') keySuffix = 'DD';
+        if(metric === 'BRCĐ') keySuffix = 'BRCD';
+        if(metric === 'AI Mentor') keySuffix = 'AIMentor';
+
+        if (isM) { statsMap[gvKey][`M_${keySuffix}`] += val; rowSumM += val; }
+        if (isHH) { statsMap[gvKey][`HH_${keySuffix}`] += val; rowSumHH += val; }
+        statsMap[gvKey][`ALL_${keySuffix}`] += val;
         rowSumALL += val;
       });
 
       if (isM) statsMap[gvKey]['M_Tong'] += rowSumM;
       if (isHH) statsMap[gvKey]['HH_Tong'] += rowSumHH;
 
+      const valTTKD = parseVal(row['TTKD']);
       const valOS = parseVal(row['OS']);
       const valCT = parseVal(row['CT']);
       const valHoc = parseVal(row['HOC']);
@@ -305,6 +318,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       // Calculate 'Họp' = OKR + STL
       const valHop = valOKR + valSTL;
 
+      statsMap[gvKey]['ALL_TTKD'] += valTTKD;
       statsMap[gvKey]['ALL_OS'] += valOS;
       statsMap[gvKey]['ALL_CT'] += valCT;
       statsMap[gvKey]['ALL_Hoc'] += valHoc;
@@ -313,7 +327,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       statsMap[gvKey]['ALL_Hop'] += valHop; // Accumulate Hop
 
       // Sum everything for Total
-      rowSumALL += (valOS + valCT + valHoc + valOKR + valSTL);
+      rowSumALL += (valTTKD + valOS + valCT + valHoc + valOKR + valSTL);
       statsMap[gvKey]['ALL_Tong'] += rowSumALL;
     });
 

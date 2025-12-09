@@ -24,7 +24,9 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
     'Ngày': new Date().toISOString().split('T')[0],
     'Thứ': '',
     'GV': '',
-    '91': '0', '66': '0', '60': '0', 'OL': '0', 'KN': '0', 'Coach': '0', 'OKR': '0', 'STL': '0', 'OS': '0', 'CT': '0', 'HOC': '0',
+    // Updated keys
+    'DĐ': '0', 'BRCĐ': '0', 'CNTT': '0', 'OL': '0', 'KN': '0', 'Coach': '0', 
+    'AI Mentor': '0', 'TTKD': '0', 'OKR': '0', 'STL': '0', 'OS': '0', 'CT': '0', 'HOC': '0',
     'Đơn vị': '',
     'SL HV': '0',
     'Hình Thức': 'Offline',
@@ -77,6 +79,9 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
   // Common input styles for dark mode
   const inputClass = "w-full px-3 py-2 border border-slate-600 bg-slate-700 text-white rounded focus:ring-1 focus:ring-blue-400 focus:border-blue-400 outline-none text-sm placeholder-gray-400";
   const labelClass = "block text-xs font-bold text-gray-200 mb-1";
+
+  // List of metric fields to render in grid
+  const metricFields = ['DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor', 'TTKD', 'OKR', 'STL', 'OS', 'CT', 'HOC'];
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 overflow-y-auto backdrop-blur-sm">
@@ -175,10 +180,10 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
           {/* Row 3: Numeric Metrics Grid */}
           <div className="md:col-span-12 border-t border-slate-600 py-4 my-2 bg-slate-800/50 rounded px-2">
             <label className="block text-xs font-bold text-blue-300 mb-3 uppercase border-l-4 border-blue-500 pl-2">Chỉ số đào tạo</label>
-            <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-2">
-              {['91', '66', '60', 'OL', 'KN', 'Coach', 'OKR', 'STL', 'OS', 'CT', 'HOC'].map((field) => (
+            <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-7 gap-2">
+              {metricFields.map((field) => (
                 <div key={field}>
-                  <label className="block text-[10px] text-gray-400 text-center mb-1">{field}</label>
+                  <label className="block text-[10px] text-gray-400 text-center mb-1 truncate" title={field}>{field}</label>
                   <input 
                     type="number"
                     min="0"
