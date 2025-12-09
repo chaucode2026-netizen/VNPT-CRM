@@ -155,9 +155,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   // --- AUTO-SWITCH MONTH LOGIC ---
   useEffect(() => {
     if (availableSheets.length === 0 || activeCategory === 'NV') return;
-
-    // Filter available months for the SELECTED YEAR if possible, or just recent ones
-    // We stick to current selection if valid
   }, [availableSheets, activeCategory]); 
 
 
@@ -174,28 +171,31 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return availableSheets.find(s => s.toUpperCase().includes(keyword)) || '';
     }
 
-    const monthPattern = selectedMonth.length === 1 ? `0${selectedMonth}` : selectedMonth;
-    const suffix = `-T${monthPattern}`;
-    const yearSuffix = `-${selectedYear}`; // Assuming format like BC-T01-2025 could exist
-
     const searchType = (activeCategory === 'TH') ? 'BC' : activeCategory;
+    const mInt = parseInt(selectedMonth, 10);
+    const yearStr = selectedYear.toString();
 
-    // First try to find sheet with specific Year
-    let found = availableSheets.find(name => {
-      const nameUpper = name.toUpperCase();
-      // Must contain type (e.g. BC) and Month (e.g. T05) and Year
-      return nameUpper.includes(searchType) && nameUpper.includes(suffix) && nameUpper.includes(yearSuffix);
-    });
+    // Fix logic: Check both "09" and "9" formats
+    const paddedMonth = mInt < 10 ? `0${mInt}` : `${mInt}`;
+    const unpaddedMonth = `${mInt}`;
 
-    // If not found, try generic Month (ignoring Year or assuming current file is correct)
-    if (!found) {
-        found = availableSheets.find(name => {
+    // Priority: 1. Type-T09-2025, 2. Type-T9-2025, 3. Type-T09, 4. Type-T9
+    const suffixesToCheck = [
+        `-T${paddedMonth}-${yearStr}`, 
+        `-T${unpaddedMonth}-${yearStr}`,
+        `-T${paddedMonth}`,            
+        `-T${unpaddedMonth}`           
+    ];
+
+    for (const suffix of suffixesToCheck) {
+        const found = availableSheets.find(name => {
             const nameUpper = name.toUpperCase();
             return nameUpper.includes(searchType) && nameUpper.includes(suffix);
         });
+        if (found) return found;
     }
 
-    return found;
+    return '';
   }, [availableSheets, selectedMonth, selectedYear, activeCategory, nvSubTab]);
 
   useEffect(() => {
@@ -216,13 +216,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
     if (isYearlyMode) {
         // AGGREGATE ALL MONTHS (BC-T01 to BC-T12)
         ALL_MONTHS.forEach(m => {
-             const mSuffix = `-T${m}`;
+             const mInt = parseInt(m, 10);
+             const padded = mInt < 10 ? `0${mInt}` : `${mInt}`;
+             const unpadded = `${mInt}`;
              const ySuffix = `-${selectedYear}`;
-             // Find sheet for this month
-             let sName = availableSheets.find(n => n.includes('BC') && n.includes(mSuffix) && n.includes(ySuffix));
+             
+             // Try to find sheet for this month (strict year match first)
+             // Check T01 and T1 variants
+             let sName = availableSheets.find(n => 
+                 n.includes('BC') && n.includes(ySuffix) && (n.includes(`-T${padded}`) || n.includes(`-T${unpadded}`))
+             );
+             
              if (!sName) {
                  // Fallback to year-less
-                 sName = availableSheets.find(n => n.includes('BC') && n.includes(mSuffix));
+                 sName = availableSheets.find(n => 
+                    n.includes('BC') && (n.includes(`-T${padded}`) || n.includes(`-T${unpadded}`))
+                 );
              }
 
              if (sName) {
@@ -355,16 +364,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     // 3. Kế Hoạch & Bù Phép (Merge Logic)
     if (activeCategory === 'KH' || activeCategory === 'BF') {
-         const monthId = `T${selectedMonth.length === 1 ? `0${selectedMonth}` : selectedMonth}`;
+         // Flexible ID match
+         const mInt = parseInt(selectedMonth, 10);
+         const padded = mInt < 10 ? `0${mInt}` : `${mInt}`;
+         const unpadded = `${mInt}`;
          
-         const bfName = availableSheets.find(s => {
+         const findSheet = (type: string) => availableSheets.find(s => {
              const upper = s.toUpperCase();
-             return (upper.includes('BF') || upper.includes('BU')) && upper.includes(monthId);
+             return (upper.includes(type)) && (upper.includes(`T${padded}`) || upper.includes(`T${unpadded}`));
          });
-         const bcName = availableSheets.find(s => {
-             const upper = s.toUpperCase();
-             return upper.includes('BC') && upper.includes(monthId);
-         });
+
+         const bfName = findSheet('BF') || findSheet('BU');
+         const bcName = findSheet('BC');
 
          const bfData = bfName ? getDataBySheetName(bfName) : undefined;
          const bcData = bcName ? getDataBySheetName(bcName) : undefined;
