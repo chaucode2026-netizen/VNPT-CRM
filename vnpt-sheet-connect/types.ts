@@ -54,3 +54,25 @@ export interface AppConfig {
   instructors: string[];
   units: string[];
 }
+
+// --- Table Settings Types (New) ---
+export interface ConditionalRule {
+  condition: 'equals' | 'contains' | 'starts_with' | 'greater_than' | 'less_than';
+  value: string;
+  backgroundColor: string;
+  textColor: string;
+  bold: boolean;
+}
+
+export interface TableConfig {
+  isEnabledAlternating: boolean;
+  alternatingColor: {
+    headerBg: string;
+    headerText: string;
+    oddRowBg: string;
+    evenRowBg: string;
+  };
+  conditionalRules: ConditionalRule[];
+  instructorColors: Record<string, string>; // Map "Nguyen Van A" -> "#ff0000"
+  columnWidths: Record<string, number>;
+}

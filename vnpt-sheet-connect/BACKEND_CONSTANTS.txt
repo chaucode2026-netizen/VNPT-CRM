@@ -1,0 +1,36 @@
+
+/**
+ * FILE 1: CONSTANTS & CONFIGURATION
+ * Chứa các định nghĩa tiêu đề cột và tên Sheet hệ thống.
+ */
+
+const INDEX_SHEET_NAME = "SYSTEM_INDEX";
+const USERS_SHEET = "Users";
+const CONFIG_SHEET = "CONFIG"; // Tên tab chứa cấu hình (Mã Lớp, GV, Đơn Vị)
+
+// Header cho Báo Cáo (BC) và Nghiệp Vụ (NV)
+// Đã thêm cột 'Màu' ở cuối
+const HEADERS_BC = [
+  'STT','Mã Lớp','Nội dung','Buổi','Ngày','Thứ','GV',
+  'DĐ','BRCĐ','CNTT','OL','KN','Coach','AI Mentor','TTKD',
+  'OKR','STL','OS','CT','HOC',
+  'Đơn vị','SL HV','Hình Thức','ĐTV',
+  'Màu' 
+];
+
+// Header cho Bù Phép (BF) và Kế Hoạch (KH)
+// Cấu trúc: STT, Giảng Viên, Màu, [Ngày 01...31]
+const HEADERS_BF = ['STT', 'Giảng Viên', 'Màu']; 
+
+// Header cho Thống kê (TH)
+// Đã thêm cột 'Màu' ở cuối
+const HEADERS_TH = [
+  'STT','Giảng Viên',
+  // ĐTV-M
+  'DĐ','BRCĐ','CNTT','OL','KN','Coach','AI Mentor','Tổng',
+  // ĐTV-HH
+  'DĐ_1','BRCĐ_1','CNTT_1','OL_1','KN_1','Coach_1','AI Mentor_1','Tổng_1',
+  // ALL
+  'DĐ_2','BRCĐ_2','CNTT_2','OL_2','KN_2','Coach_2','AI Mentor_2','TTKD','OKR','STL','OS','CT','Họp','Học','Tổng_2',
+  'Màu'
+];

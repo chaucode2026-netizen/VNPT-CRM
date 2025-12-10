@@ -390,27 +390,6 @@ function App() {
               />
           );
 
-      case 'operations':
-          return (
-              <Dashboard 
-                data={currentSheetData} 
-                availableSheets={sheetNames}
-                currentSheetName={selectedSheetName}
-                onSheetChange={handleSheetChange}
-                scriptUrl={scriptUrl}
-                onRefresh={() => handleRefresh(false)}
-                spreadsheetUrl={spreadsheetUrl}
-                onUrlUpdate={handleUrlUpdate}
-                user={currentUser}
-                isRefreshing={isRefreshing || loadingState === LoadingState.LOADING}
-                appConfig={appConfig}
-                getDataBySheetName={getDataBySheetName}
-                cacheVersion={cacheVersion}
-                initialCategory="NV"
-                key="dashboard-nv"
-              />
-          );
-
       case 'settings':
         if (currentUser.role !== 'ADMIN') {
            return <div className="p-10 text-center text-red-500 font-bold">Bạn không có quyền truy cập khu vực này.</div>;

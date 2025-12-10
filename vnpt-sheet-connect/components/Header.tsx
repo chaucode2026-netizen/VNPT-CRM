@@ -17,7 +17,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange, user, on
   const navItems = [
     { id: 'home', label: 'Trang chủ' },
     { id: 'reports', label: 'Báo cáo', disabled: false },
-    { id: 'operations', label: 'Nghiệp vụ', disabled: false },
+    // Removed Operations/Nghiệp vụ tab
     // Only Admin can see Settings
     { id: 'settings', label: 'Cấu hình & User', hidden: !isAdmin },
   ];

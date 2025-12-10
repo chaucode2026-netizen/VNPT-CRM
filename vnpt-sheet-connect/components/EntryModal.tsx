@@ -30,7 +30,8 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
     'Đơn vị': '',
     'SL HV': '0',
     'Hình Thức': 'Offline',
-    'ĐTV': 'HH'
+    'ĐTV': 'HH',
+    'Màu': '#ffffff' // Default white
   });
 
   // Update STT when nextStt prop changes or modal opens
@@ -243,6 +244,21 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
                {LIST_DTV.map(item => <option key={item} value={item} className="bg-slate-700">{item}</option>)}
             </select>
           </div>
+
+          {/* Row 5: Màu sắc (Color Picker) */}
+          <div className="md:col-span-12 flex items-center justify-end space-x-3 mt-2">
+             <label className="text-xs font-bold text-gray-200 uppercase">Màu hiển thị dòng:</label>
+             <div className="relative overflow-hidden rounded-md border border-slate-500 w-10 h-8">
+                <input 
+                  type="color" 
+                  value={formData['Màu']}
+                  onChange={(e) => handleChange('Màu', e.target.value)}
+                  className="absolute -top-2 -left-2 w-16 h-16 cursor-pointer border-none p-0"
+                  title="Chọn màu nền cho dòng này"
+                />
+             </div>
+          </div>
+
         </form>
 
         {/* Footer */}

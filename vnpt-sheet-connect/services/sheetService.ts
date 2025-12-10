@@ -1,5 +1,5 @@
 
-import { SheetData, SheetRow, SheetListResponse, LoginResponse, User, UserListResponse, AppConfig } from '../types';
+import { SheetData, SheetRow, SheetListResponse, LoginResponse, User, UserListResponse, AppConfig, TableConfig } from '../types';
 
 // Helper for CORS headers
 const POST_HEADERS = {
@@ -255,5 +255,47 @@ export const saveAppConfig = async (scriptUrl: string, user: User, config: AppCo
   } catch (error) {
     console.error("Save Config error:", error);
     throw error;
+  }
+};
+
+// --- TABLE SETTINGS API ---
+
+export const saveTableConfig = async (scriptUrl: string, sheetName: string, config: TableConfig): Promise<boolean> => {
+  try {
+    const payload = JSON.stringify({
+      action: 'saveTableConfig',
+      sheetName: sheetName,
+      config: config
+    });
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: POST_HEADERS,
+      body: payload
+    });
+    const data = await response.json();
+    if (data.error) throw new Error(data.error);
+    return true;
+  } catch (error) {
+    console.error("Save Table Config error:", error);
+    throw error;
+  }
+};
+
+export const fetchTableConfig = async (scriptUrl: string, sheetName: string): Promise<TableConfig | null> => {
+  try {
+    const payload = JSON.stringify({
+      action: 'getTableConfig',
+      sheetName: sheetName
+    });
+    const response = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: POST_HEADERS,
+      body: payload
+    });
+    const data = await response.json();
+    return data.tableConfig || null;
+  } catch (error) {
+    console.error("Fetch Table Config error:", error);
+    return null;
   }
 };
