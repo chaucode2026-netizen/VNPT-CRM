@@ -1,4 +1,5 @@
 
+// ... imports ... (Keeping existing structure)
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { SheetData, SheetRow, User, AppConfig, TableConfig } from '../types';
 import { EntryModal } from './EntryModal';
@@ -26,9 +27,10 @@ interface DashboardProps {
   cacheVersion?: number;
   initialCategory?: SheetCategory;
   onLoadAllMonths?: (year: string) => Promise<void>;
+  isSheetNotFound?: boolean; // New prop indicating file is missing on backend
 }
 
-// Columns for Report view
+// ... Columns and Constants definitions (Keep exactly as provided previously) ...
 const REPORT_COLUMNS = [
   'STT', 'Mã Lớp', 'Nội dung', 'Buổi', 'Ngày', 'Thứ', 'Giảng Viên', 
   'DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor', 'TTKD', 
@@ -132,7 +134,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   getDataBySheetName,
   cacheVersion = 0,
   initialCategory = 'BC',
-  onLoadAllMonths
+  onLoadAllMonths,
+  isSheetNotFound = false
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -158,7 +161,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   
   // Table Configuration State
   const [tableConfig, setTableConfig] = useState<TableConfig>(DEFAULT_TABLE_CONFIG);
-  const [isConfigLoading, setIsConfigLoading] = useState(true); // Default loading to prevent flash
+  const [isConfigLoading, setIsConfigLoading] = useState(false); // Changed default to false to handle initial empty state better
   
   // Cache for Table Configs to prevent re-fetching
   const configCache = useRef<Record<string, TableConfig>>({});
@@ -173,12 +176,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [activeCategory]);
   
-  // --- AUTO-SWITCH MONTH LOGIC ---
-  useEffect(() => {
-    if (availableSheets.length === 0 || activeCategory === 'NV') return;
-  }, [availableSheets, activeCategory]); 
-
-
   // --- DERIVED STATE ---
   const targetSheetName = useMemo(() => {
     if (activeCategory === 'NV') {
@@ -221,12 +218,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return '';
   }, [availableSheets, selectedMonth, selectedYear, activeCategory, nvSubTab, isYearlyMode]);
 
-  // NEW: Shared Config Key per Month
-  // This ensures that BC, BF, KH, TH of the same month share the same configuration
+  // Shared Config Key per Month
   const configKey = useMemo(() => {
     return `CONF_T${selectedMonth}_${selectedYear}`;
   }, [selectedMonth, selectedYear]);
 
+  // Change sheet when target changes
   useEffect(() => {
     if (targetSheetName && targetSheetName !== currentSheetName && !isYearlyMode) {
       onSheetChange(targetSheetName);
@@ -246,14 +243,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
               return;
           }
 
-          // 2. If not in cache, trigger loading state to prevent using Default Config on UI
+          // 2. Load
           setIsConfigLoading(true);
           try {
               const cfg = await fetchTableConfig(scriptUrl, configKey);
               if (isMounted) {
                   const finalConfig = cfg || DEFAULT_TABLE_CONFIG;
                   setTableConfig(finalConfig);
-                  // 3. Save to cache
                   configCache.current[configKey] = finalConfig;
               }
           } catch (e) { 
@@ -263,14 +259,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
               if (isMounted) setIsConfigLoading(false);
           }
       };
+      
+      // Only load config if we are in a mode that needs it, or if we expect to show a sheet
+      // However, we load it anyway based on month/year selection so it's ready when sheet is created
       loadConfig();
       return () => { isMounted = false; };
   }, [configKey, scriptUrl]);
 
-  // --- SAVE TABLE CONFIG ---
   const handleSaveTableConfig = async (newConfig: TableConfig) => {
       setTableConfig(newConfig);
-      // Update cache immediately
       if (configKey) {
           configCache.current[configKey] = newConfig;
           try {
@@ -280,8 +277,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
   };
 
-  // --- CALCULATE STATISTICS (Kept same as before) ---
+  // --- CALCULATE STATISTICS (Kept same) ---
   const statisticsData = useMemo(() => {
+    // ... (Keep existing logic unchanged) ...
     if (activeCategory !== 'TH') return [];
     let sourceRows: SheetRow[] = [];
     if (isYearlyMode) {
@@ -307,7 +305,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     const statsMap: Record<string, any> = {};
     sourceRows.forEach(row => {
-      const gv = row['GV'] || row['Giảng Viên'];
+      const gv = row['Giảng Viên'] || row['GV'];
       if (!gv) return;
       const gvKey = gv.trim();
       if (!statsMap[gvKey]) {
@@ -322,12 +320,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
       const dtvRaw = row['ĐTV'] ? row['ĐTV'].toString().toUpperCase() : '';
       const isM = dtvRaw.includes('M');
-      const isHH = dtvRaw.includes('HH');
+      // UPDATED: 'CD' is counted as 'HH' for statistics
+      const isCD = dtvRaw.includes('CD');
+      const isHH = dtvRaw.includes('HH') || isCD;
+
       const metrics = ['DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor'];
       let rowSumM = 0; let rowSumHH = 0; let rowSumALL = 0;
       metrics.forEach(metric => {
         const val = parseVal(row[metric]);
-        // Key mapping: 'DĐ' -> 'DD', 'BRCĐ' -> 'BRCD'
         let keySuffix = metric;
         if(metric === 'DĐ') keySuffix = 'DD';
         if(metric === 'BRCĐ') keySuffix = 'BRCD';
@@ -340,10 +340,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
       });
       if (isM) statsMap[gvKey]['M_Tong'] += rowSumM;
       if (isHH) statsMap[gvKey]['HH_Tong'] += rowSumHH;
-      // ... (Sums)
+      
       const valTTKD = parseVal(row['TTKD']); const valOS = parseVal(row['OS']); const valCT = parseVal(row['CT']);
       const valHoc = parseVal(row['HOC']); const valOKR = parseVal(row['OKR']); const valSTL = parseVal(row['STL']);
-      
       const valHop = valOKR + valSTL;
 
       statsMap[gvKey]['ALL_TTKD'] += valTTKD; statsMap[gvKey]['ALL_OS'] += valOS; statsMap[gvKey]['ALL_CT'] += valCT;
@@ -356,6 +355,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     return Object.values(statsMap).map((item: any, index) => ({ ...item, 'STT': (index + 1).toString() }));
   }, [data, activeCategory, isYearlyMode, selectedYear, availableSheets, cacheVersion]); 
+  // ... (Rest of derived logic and helper functions) ...
 
   const instructorList = useMemo(() => {
     const fromConfig = appConfig.instructors || [];
@@ -364,7 +364,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [data, appConfig]);
 
   const canCreateMonth = user.role === 'ADMIN';
-  const canAddBCData = (user.role === 'ADMIN' || user.role === 'LEADER') && (activeCategory === 'BC' || activeCategory === 'NV') && !!targetSheetName;
+  const canAddBCData = (user.role === 'ADMIN' || user.role === 'LEADER') && (activeCategory === 'BC' || activeCategory === 'NV') && !!targetSheetName && !isSheetNotFound;
 
   const currentColumns = useMemo(() => {
     if (activeCategory === 'BF' || activeCategory === 'KH') {
@@ -376,18 +376,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [activeCategory, selectedMonth, selectedYear]);
 
   const filteredRows = useMemo(() => {
-    // 1. Thống Kê
+     // ... (Keep existing filtering logic) ...
     if (activeCategory === 'TH') {
        if (!statisticsData) return [];
        return statisticsData.filter((row: any) => row['Giảng Viên'].toLowerCase().includes(searchTerm.toLowerCase()));
     }
-    // 2. Nghiệp Vụ
     if (activeCategory === 'NV') {
        if (!data || !data.rows) return [];
        return data.rows.filter(row => Object.values(row).some((val) => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
     }
-    // 3. Kế Hoạch & Bù Phép (Merge Logic)
     if (activeCategory === 'KH' || activeCategory === 'BF') {
+         // ... (Keep existing complex logic for KH/BF) ...
          const mInt = parseInt(selectedMonth, 10);
          const padded = mInt < 10 ? `0${mInt}` : `${mInt}`;
          const unpadded = `${mInt}`;
@@ -400,7 +399,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
          const bfName = findSheet('BF') || findSheet('BU');
          const bcName = findSheet('BC');
          
-         // Retrieve data from cache via helper
          const bfData = bfName ? getDataBySheetName(bfName) : undefined;
          const bcData = bcName ? getDataBySheetName(bcName) : undefined;
 
@@ -411,8 +409,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
          const calculatedRows = sortedInstructors.map((instructor: string, idx) => {
             const rowObj: SheetRow = { 'STT': (idx + 1).toString(), 'Giảng Viên': instructor };
-            
-            // 1. Initial merge from Current Sheet (KH or BF)
             if (data && data.rows) {
                 const matches = data.rows.filter(r => normalize((r['Giảng Viên'] || r['GV'] || r['Họ và tên']) as string) === normalize(instructor));
                 matches.forEach(m => {
@@ -420,55 +416,40 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     if(m['Màu']) rowObj['Màu'] = m['Màu'];
                 });
             }
-
-            // 2. Logic for KH View: Merge data from BF and BC
             if (activeCategory === 'KH') {
                  daysArray.forEach(day => {
                     const dayKey = day; const dayNumKey = parseInt(day, 10).toString();
-                    
-                    // Only process if cell is empty so far (Priority: KH > BF > BC)
                     if (!rowObj[day] && !rowObj[dayNumKey]) {
                         let cellContent = '';
-
-                        // A. Check BF Data (Leaves/Compensations)
                         if (bfData && bfData.rows) {
                              const bfRow = bfData.rows.find(r => normalize(String(r['Giảng Viên']||'')) === normalize(instructor));
                              if (bfRow) cellContent = (bfRow[dayKey] as string) || (bfRow[dayNumKey] as string) || '';
                         }
-                        
-                        // B. Check BC Data (Schedule/Classes)
                         if (!cellContent && bcData && bcData.rows) {
                              const matchingBC = bcData.rows.filter(r => {
                                 const rName = String(r['Giảng Viên'] || r['GV'] || '');
                                 const rDate = String(r['Ngày'] || '');
                                 if (normalize(rName) !== normalize(instructor)) return false;
                                 if (!rDate) return false;
-                                
-                                // Robust Date Parsing
                                 const dateStr = rDate.toString().trim();
                                 const parts = dateStr.split(/[-/]/);
                                 if (parts.length >= 2) {
                                     let d = 0, m = 0;
-                                    // Handle both YYYY-MM-DD and DD/MM/YYYY
                                     if (parts[0].length === 4) { m = parseInt(parts[1], 10); d = parseInt(parts[2], 10); } 
                                     else { d = parseInt(parts[0], 10); m = parseInt(parts[1], 10); }
                                     return d === parseInt(day, 10) && m === parseInt(selectedMonth, 10);
                                 }
                                 return false;
                              });
-
                              if (matchingBC.length > 0) {
                                  const lines = matchingBC.map(item => {
-                                     // Create format: "MãLớp-Buổi" (e.g., CT91-S)
                                      const code = String(item['Mã Lớp'] || item['Nội dung'] || '?');
                                      const session = String(item['Buổi'] || '');
                                      return `${code}-${session}`;
                                  });
-                                 // Join unique entries with newline
                                  cellContent = lines.join('\n');
                              }
                         }
-
                         if (cellContent) rowObj[day] = cellContent;
                     }
                  });
@@ -477,11 +458,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
          });
          return calculatedRows.filter(row => row['Giảng Viên'].toLowerCase().includes(searchTerm.toLowerCase()));
     }
-    // Default Fallback
     if (!data || !data.rows) return [];
     return data.rows.filter(row => Object.values(row).some((val) => (val as string).toLowerCase().includes(searchTerm.toLowerCase())));
   }, [data, statisticsData, searchTerm, activeCategory, nvSubTab, targetSheetName, appConfig, updateTrigger, selectedMonth, selectedYear, availableSheets, getDataBySheetName, cacheVersion, isYearlyMode]);
 
+  // ... (Helper functions for rendering: getCellColor, getRowValue, getConditionalStyle) ...
   const getCellColor = (value: string, header: string, dayLabel?: string) => {
     // 1. Weekends
     if (dayLabel === 'CN' || dayLabel === 'T7') return 'bg-pink-100 text-pink-900';
@@ -501,7 +482,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
          return 'text-blue-600';
        }
     }
-    // 4. BC weekends - UPDATED: Only color 'Thứ' column, removed 'Ngày' check
+    // 4. BC weekends
     if ((activeCategory === 'BC' || activeCategory === 'NV') && (header === 'Thứ')) {
         const val = value?.trim().toLowerCase();
         if (val === 'cn' || val === 'chủ nhật') return 'bg-pink-100 text-pink-700 font-bold';
@@ -518,11 +499,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const getRowValue = (row: SheetRow, header: string) => {
     if (row[header] !== undefined) return row[header];
-
-    // FIX: Map "Giảng Viên" from Dashboard logic to "GV" from Backend Data
     if (header === 'Giảng Viên' && row['GV']) return row['GV'];
     if (header === 'GV' && row['Giảng Viên']) return row['Giảng Viên'];
-
     const foundKey = Object.keys(row).find(k => k.toLowerCase() === header.toLowerCase());
     if (foundKey) return row[foundKey];
     if (header === 'Mã Lớp' && row['Đài']) return row['Đài'];
@@ -531,17 +509,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return '';
   };
 
-  // --- CONDITIONAL FORMATTING CHECK ---
   const getConditionalStyle = (value: string): React.CSSProperties => {
       if (!tableConfig.conditionalRules || tableConfig.conditionalRules.length === 0) return {};
-      
       const valStr = String(value || '').toLowerCase();
       const numVal = parseFloat(value);
 
       for (const rule of tableConfig.conditionalRules) {
           const ruleVal = rule.value.toLowerCase();
           let match = false;
-          
           switch(rule.condition) {
               case 'equals': match = valStr === ruleVal; break;
               case 'contains': match = valStr.includes(ruleVal); break;
@@ -549,7 +524,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
               case 'greater_than': match = !isNaN(numVal) && numVal > parseFloat(ruleVal); break;
               case 'less_than': match = !isNaN(numVal) && numVal < parseFloat(ruleVal); break;
           }
-
           if (match) {
               return { 
                   backgroundColor: rule.backgroundColor, 
@@ -602,6 +576,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // --- RENDERERS ---
   const renderTableHeader = () => {
+     // ... (Keep existing header logic) ...
     const { headerBg, headerText } = tableConfig.alternatingColor;
     const headerStyle = { backgroundColor: headerBg, color: headerText };
 
@@ -647,7 +622,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                );
             })}
           </tr>
-          {/* Added text-gray-800 explicit color to ensure visibility against white bg */}
           <tr className="bg-gray-50 text-gray-800">
             {days.map((day, idx) => {
                const dayLabel = getDayLabel(day, selectedMonth, selectedYear);
@@ -663,15 +637,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
       );
     }
     
-    // BC / NV / Default
     return (
       <thead className="sticky top-0 z-20 shadow-sm">
         <tr>
           {currentColumns.map((header, idx) => {
-            // Apply configured width or default width or fall back to 100
             const width = tableConfig.columnWidths[header];
             const style = { ...headerStyle, width: width ? `${width}px` : undefined };
-            
             return (
               <th key={idx} className={`px-2 py-3 border border-gray-300 text-sm font-bold uppercase tracking-wider whitespace-nowrap text-center
                   ${header === 'STT' ? 'sticky left-0 z-30 border-r-2 border-r-gray-300 w-12' : ''}
@@ -690,7 +661,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const renderTableBody = () => {
-    // Helper for Row BG
+    // ... (Keep existing body logic) ...
     const getRowBg = (idx: number) => {
         if (tableConfig.isEnabledAlternating) {
             return idx % 2 === 0 ? tableConfig.alternatingColor.oddRowBg : tableConfig.alternatingColor.evenRowBg;
@@ -710,14 +681,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     const val = row[key];
                     const num = Number(val);
                     const hasValue = val && !isNaN(num) && num > 0;
-                    
                     let cellClass = hasValue ? 'font-bold text-gray-900' : 'text-gray-400';
                     if (hasValue && key.endsWith('Tong')) {
                         if (key.startsWith('M_')) cellClass = 'font-bold text-blue-700 bg-blue-50';
                         else if (key.startsWith('HH_')) cellClass = 'font-bold text-green-700 bg-green-50';
                         else if (key.startsWith('ALL_')) cellClass = 'font-bold text-red-600 bg-red-50';
                     }
-
                     return (
                         <td key={`${group.title}-${key}-${kIdx}`} className={`px-2 py-1 text-sm border border-gray-200 text-center align-middle ${cellClass}`}>
                             {hasValue ? val : '-'}
@@ -732,56 +701,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return filteredRows.map((row, rIdx) => {
       const instructorName = row['Giảng Viên'] || row['GV'] || '';
       const rowBg = getRowBg(rIdx);
-      
       return (
       <tr key={rIdx} className="group hover:bg-blue-50 transition-colors" style={{ backgroundColor: rowBg, color: '#1f2937' }}>
         {currentColumns.map((header, cIdx) => {
           const value = getRowValue(row, header);
           const isDateCol = (activeCategory === 'BF' || activeCategory === 'KH') && !isNaN(Number(header));
           const dayLabel = isDateCol ? getDayLabel(header, selectedMonth, selectedYear) : '';
-          
           const width = tableConfig.columnWidths[header];
-
           const baseColorClass = getCellColor(value as string, header, dayLabel);
           const hasBaseBg = baseColorClass.includes('bg-');
           const hasBaseText = baseColorClass.includes('text-');
-          
           const conditionalStyle = getConditionalStyle(value as string);
-
           const isInstructorCol = header === 'Giảng Viên' || header === 'GV' || header === 'Họ và tên';
           const instructorColor = (isInstructorCol && instructorName) ? tableConfig.instructorColors[instructorName] : undefined;
 
-          // Sticky style logic
           const stickyStyle: React.CSSProperties = { 
              width: width ? `${width}px` : undefined,
              ...conditionalStyle
           };
-          
-          // Apply rowBg or specific overrides to the CELL BACKGROUND
           if (!stickyStyle.backgroundColor && !hasBaseBg) {
-             // NO instructorColor here anymore for cell bg, only rowBg
              stickyStyle.backgroundColor = rowBg;
           }
-
           if (!stickyStyle.color && !hasBaseText) {
              stickyStyle.color = '#1f2937';
           }
-          
-          // Render Content
           let content: React.ReactNode = value;
-          
-          // Apply Badge Style for Instructor Column
           if (isInstructorCol && instructorColor && value) {
               content = (
-                  <span 
-                      className="inline-block px-2 py-0.5 rounded shadow-sm text-gray-800 font-bold border border-black/10"
-                      style={{ backgroundColor: instructorColor }}
-                  >
-                      {value as string}
-                  </span>
+                  <span className="inline-block px-2 py-0.5 rounded shadow-sm text-gray-800 font-bold border border-black/10" style={{ backgroundColor: instructorColor }}>{value as string}</span>
               );
           }
-          
           return (
             <td 
               key={cIdx} 
@@ -803,23 +752,61 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const renderContent = () => {
-      // Check both data refreshing AND config loading to prevent FOUC
-      if ((isRefreshing || isConfigLoading) && (!targetSheetName || filteredRows.length === 0 || isConfigLoading) && !isYearlyMode) {
+      // 1. If we are refreshing data from the server, show loading
+      if (isRefreshing && !isYearlyMode) {
           return (
             <div className="flex flex-col items-center justify-center h-64 space-y-4">
                 <svg className="animate-spin h-10 w-10 text-vnpt-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                <span className="text-gray-500 font-medium">Đang tải dữ liệu và cấu hình...</span>
+                <span className="text-gray-500 font-medium">Đang tải dữ liệu...</span>
             </div>
           );
       }
-      
-      if (!targetSheetName && activeCategory !== 'KH' && !isYearlyMode) {
-          return <div className="p-10 text-center"><button onClick={activeCategory === 'NV' ? handleCreateNVSheets : handleCreateMonth} className="bg-blue-600 text-white px-4 py-2 rounded">Khởi tạo</button></div>;
+
+      // 2. CRITICAL: If no target sheet found OR explicit Not Found flag (deleted from backend)
+      // Show CREATE BUTTON immediately.
+      // We skip 'KH' because KH can aggregate data, but for simplicity, if nothing exists, allow creation.
+      if ((!targetSheetName || isSheetNotFound) && activeCategory !== 'KH' && !isYearlyMode) {
+          return (
+             <div className="flex flex-col items-center justify-center h-64 space-y-4">
+                 <p className="text-gray-500 mb-2">
+                    {isSheetNotFound 
+                        ? `Dữ liệu Tháng ${selectedMonth}/${selectedYear} chưa tồn tại (hoặc đã bị xóa).` 
+                        : `Dữ liệu Tháng ${selectedMonth}/${selectedYear} chưa được khởi tạo.`}
+                 </p>
+                 <button 
+                    onClick={activeCategory === 'NV' ? handleCreateNVSheets : handleCreateMonth} 
+                    className="bg-vnpt-primary text-white px-6 py-2.5 rounded shadow-lg font-bold hover:bg-blue-700 transition-all flex items-center"
+                 >
+                    {isCreating ? (
+                        <>
+                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            Đang khởi tạo...
+                        </>
+                    ) : (
+                        `Khởi tạo Dữ Liệu Tháng ${selectedMonth}`
+                    )}
+                 </button>
+             </div>
+          );
       }
 
+      // 3. If Config is Loading (and we have a sheet to show), show spinner
+      if (isConfigLoading && !isYearlyMode) {
+          return (
+            <div className="flex flex-col items-center justify-center h-64 space-y-4">
+                <svg className="animate-spin h-10 w-10 text-vnpt-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span className="text-gray-500 font-medium">Đang tải cấu hình bảng...</span>
+            </div>
+          );
+      }
+
+      // 4. Default: Show Table
       return (
         <div className="flex-1 overflow-auto bg-white custom-scrollbar relative">
             <table className="w-full text-left border-collapse min-w-max animate-[fadeIn_0.3s]">
@@ -876,7 +863,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
              <div className="flex items-center gap-3">
                  <input className="border p-1 rounded" placeholder="Tìm kiếm..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
                  
-                 {spreadsheetUrl && (
+                 {spreadsheetUrl && !isSheetNotFound && (
                      <a 
                         href={spreadsheetUrl} 
                         target="_blank" 

@@ -53,6 +53,9 @@ function App() {
 
   const [currentSheetData, setCurrentSheetData] = useState<SheetData>({ headers: [], rows: [] });
   const [selectedSheetName, setSelectedSheetName] = useState<string>('');
+  
+  // NEW STATE: Explicitly track if the requested sheet is missing on backend
+  const [isSheetNotFound, setIsSheetNotFound] = useState<boolean>(false);
 
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>('home'); 
@@ -74,7 +77,7 @@ function App() {
       localStorage.setItem(LS_KEYS.CONFIG, JSON.stringify(appConfig));
   }, [appConfig]);
 
-  // --- AUTO REFRESH (15 Minutes) ---
+  // --- AUTO REFRESH & SYNC ON MOUNT ---
   useEffect(() => {
     if (!currentUser || !scriptUrl) return;
 
@@ -82,6 +85,10 @@ function App() {
     if (appConfig.instructors.length === 0) {
         loadAppConfig();
     }
+
+    // CRITICAL FIX: Force an immediate refresh when the component mounts (or user logs in)
+    // This ensures that if the user deleted sheets on the backend, the frontend updates immediately.
+    handleRefresh(true);
 
     const interval = setInterval(() => {
       console.log("Auto refreshing data...");
@@ -91,6 +98,19 @@ function App() {
     return () => clearInterval(interval);
   }, [currentUser, scriptUrl]); 
 
+  // --- SYNC SELECTION WITH SHEET LIST ---
+  // If the currently selected sheet disappears from the list (deleted from backend), reset selection
+  useEffect(() => {
+      if (selectedSheetName) {
+          // If sheetNames is empty (system cleared) OR specific sheet is gone
+          const exists = sheetNames.includes(selectedSheetName);
+          if (!exists && sheetNames.length >= 0) {
+              console.log("Selected sheet no longer exists in list, resetting UI...");
+              // We do NOT clear selectedSheetName here immediately to allow the UI to show "Create" state
+              // Instead, we let loadSheetData handle the "Not Found" state
+          }
+      }
+  }, [sheetNames, selectedSheetName]);
 
   // Check for notifications if Admin
   useEffect(() => {
@@ -155,6 +175,7 @@ function App() {
     setSheetNames([]);
     setCurrentSheetData({ headers: [], rows: [] });
     setSelectedSheetName('');
+    setIsSheetNotFound(false);
     sheetCache.current = {}; // Clear cache
     localStorage.clear(); 
     setActiveTab('home');
@@ -175,7 +196,7 @@ function App() {
     try {
       // 1. Refresh Sheet List
       const { sheetNames: names, spreadsheetUrl: url } = await fetchSheetNames(scriptUrl);
-      setSheetNames(names);
+      setSheetNames(names); 
       if (url) {
         setSpreadsheetUrl(url);
         setMasterUrl(url); // Update master URL
@@ -185,7 +206,7 @@ function App() {
       await loadAppConfig();
 
       // 3. Refresh Current Sheet Data if selected
-      // Pass the NEW names list to avoid state update race conditions
+      // We pass the new names list to verify if the selected sheet is even in the index
       if (selectedSheetName) {
          await loadSheetData(scriptUrl, selectedSheetName, !silent, true, names);
       }
@@ -206,93 +227,86 @@ function App() {
   ) => {
     if (!sheetName) return;
 
-    // Optimistically update selected name
+    // Reset status flags
     setSelectedSheetName(sheetName);
+    setIsSheetNotFound(false); // Assume it exists until proven otherwise
+
+    const currentList = overrideSheetList || sheetNames;
 
     // --- LOGIC TẢI ĐỒNG THỜI (PARALLEL FETCHING) ---
-    // 1. Xác định các sheet liên quan (Siblings)
-    // Ví dụ: Chọn BC-T12 -> Cần tải cả BF-T12 và TH-T12
-    const currentList = overrideSheetList || sheetNames;
-    const match = sheetName.match(/-(T\d{1,2})$/); // Tìm đuôi -T12
+    const match = sheetName.match(/-(T\d{1,2})$/); 
     let sheetsToFetch = [sheetName];
 
     if (match) {
-        const suffix = match[0]; // "-T12"
-        // Tìm tất cả sheet có cùng đuôi tháng trong danh sách
+        const suffix = match[0];
         const siblings = currentList.filter(s => s.endsWith(suffix) && s !== sheetName);
         sheetsToFetch = [...sheetsToFetch, ...siblings];
     }
 
-    // 2. Lọc ra những sheet cần tải (Chưa có trong cache hoặc bắt buộc tải lại)
     const needed = forceRefresh 
         ? sheetsToFetch 
         : sheetsToFetch.filter(s => !sheetCache.current[s]);
 
-    // 3. Nếu sheet ĐÍCH đã có trong cache và không cần refresh, hiển thị ngay
+    // Check cache first
     if (!forceRefresh && sheetCache.current[sheetName]) {
         console.log(`Loaded ${sheetName} from cache`);
         setCurrentSheetData(sheetCache.current[sheetName]);
-        
-        // FIX: Ensure correct URL is set from cache, fallback to Master if missing
-        if (sheetCache.current[sheetName].fileUrl) {
-            setSpreadsheetUrl(sheetCache.current[sheetName].fileUrl!);
-        } else {
-            setSpreadsheetUrl(masterUrl);
-        }
-        
-        // Nếu các sheet phụ chưa có, tải ngầm (background fetch)
-        const backgroundNeeded = sheetsToFetch.filter(s => !sheetCache.current[s]);
-        if (backgroundNeeded.length > 0) {
-            Promise.all(backgroundNeeded.map(name => fetchSheetData(url, name)))
-                .then(results => {
-                    results.forEach((data, i) => {
-                        sheetCache.current[backgroundNeeded[i]] = data;
-                    });
-                    console.log(`Background loaded siblings: ${backgroundNeeded.join(', ')}`);
-                    setCacheVersion(v => v + 1); // Notify change
-                })
-                .catch(err => console.error("Background fetch error", err));
-        }
+        setSpreadsheetUrl(sheetCache.current[sheetName].fileUrl || masterUrl);
         return; 
     }
 
-    // 4. TẢI DỮ LIỆU (Blocking)
-    // Nếu sheet đích chưa có, ta hiện loading và tải TẤT CẢ các sheet cần thiết cùng lúc
-    if (showLoading) setLoadingState(LoadingState.LOADING);
-    else setIsRefreshing(true);
-    
-    // Xóa dữ liệu cũ để hiện loading state (tránh hiển thị dữ liệu không khớp)
-    if (!forceRefresh) {
+    // Blocking Load
+    if (showLoading) {
+        setLoadingState(LoadingState.LOADING);
         setCurrentSheetData({ headers: [], rows: [] });
+    } else {
+        setIsRefreshing(true);
     }
 
     try {
       console.log(`Fetching parallel: ${needed.join(', ')}`);
       
-      // Thực hiện gọi API song song
       await Promise.all(needed.map(async (name) => {
           try {
               const data = await fetchSheetData(url, name);
-              sheetCache.current[name] = data; // Lưu vào cache
-          } catch (err) {
+              sheetCache.current[name] = data; 
+          } catch (err: any) {
               console.error(`Error loading ${name}`, err);
+              
+              // === LOGIC XỬ LÝ LỖI MỚI ===
+              // Nếu gặp lỗi "File đã xóa" hoặc "Failed to fetch" (do script crash khi không tìm thấy file)
+              // Ta đánh dấu là "Not Found" -> Dashboard sẽ hiện nút Create
+              const msg = err.message || '';
+              if (
+                 msg.includes("Chưa có dữ liệu") || 
+                 msg.includes("File đã xóa") || 
+                 msg.includes("không tồn tại") || 
+                 msg.includes("Invalid name") || 
+                 msg.includes("Failed to fetch")
+              ) {
+                 console.warn(`Sheet ${name} missing/deleted. Marking as Not Found.`);
+                 
+                 // Remove from cache to prevent showing stale data
+                 delete sheetCache.current[name];
+
+                 // Only set the "Not Found" flag if the error is for the CURRENT target sheet
+                 if (name === sheetName) {
+                    setIsSheetNotFound(true);
+                    setCurrentSheetData({ headers: [], rows: [] });
+                 }
+              }
           }
       }));
       
-      // 5. Cập nhật UI cho sheet ĐÍCH
+      // Update UI if we found data (and it wasn't marked as missing in the process)
       if (sheetCache.current[sheetName]) {
         setCurrentSheetData(sheetCache.current[sheetName]);
-        // FIX: Reset URL to Master if child sheet has no specific URL (avoids sticky URL)
-        if (sheetCache.current[sheetName].fileUrl) {
-          setSpreadsheetUrl(sheetCache.current[sheetName].fileUrl!);
-        } else {
-          setSpreadsheetUrl(masterUrl);
-        }
+        setSpreadsheetUrl(sheetCache.current[sheetName].fileUrl || masterUrl);
       }
     } catch (error) {
       console.error(error);
     } finally {
-      setCacheVersion(v => v + 1); // Notify change for dependent components
+      setCacheVersion(v => v + 1);
       if (showLoading) setLoadingState(LoadingState.IDLE);
       else setIsRefreshing(false);
     }
@@ -303,22 +317,15 @@ function App() {
       if (!scriptUrl) return;
       setIsRefreshing(true);
       try {
-          // Filter all sheets that are BC and match year (or just match T01..T12 if year implicit)
-          // We need "BC" sheets because statistics are derived from them
           const yearSuffix = `-${year}`;
           const bcSheets = sheetNames.filter(name => {
-              // Strict matching with year if present, otherwise flexible
               if (name.includes(yearSuffix) && name.includes('BC')) return true;
-              // If no year in name, we might just fetch all BC-Txx
               if (name.includes('BC') && !name.match(/-\d{4}$/)) return true;
               return false;
           });
 
-          // Filter out what we already have
           const toFetch = bcSheets.filter(s => !sheetCache.current[s]);
-          
           if (toFetch.length > 0) {
-             console.log("Fetching yearly data...", toFetch);
              await Promise.all(toFetch.map(async (name) => {
                 try {
                     const data = await fetchSheetData(scriptUrl, name);
@@ -334,7 +341,6 @@ function App() {
 
   const handleSheetChange = async (sheetName: string) => {
     if (scriptUrl) {
-       // When user switches tab, show loading spinner (showLoading=true) but allow cache (forceRefresh=false)
        await loadSheetData(scriptUrl, sheetName, true, false);
     }
   };
@@ -347,7 +353,6 @@ function App() {
     setScriptUrl(url);
   };
 
-  // Helper to access cached data (for cross-sheet logic in Dashboard)
   const getDataBySheetName = useCallback((name: string) => {
      return sheetCache.current[name];
   }, []);
@@ -386,6 +391,7 @@ function App() {
                 cacheVersion={cacheVersion}
                 initialCategory="BC"
                 onLoadAllMonths={handleLoadAllMonths}
+                isSheetNotFound={isSheetNotFound} // PASS THE NEW FLAG
                 key="dashboard-bc"
               />
           );
@@ -436,9 +442,6 @@ function App() {
                   </button>
                   <button 
                     onClick={() => {
-                        // Pass props to dashboard via activeTab=reports but change category logic if needed.
-                        // Here we just switch tabs.
-                        // For TH stats: user goes to Reports -> Clicks 'Thống kê'
                         setActiveTab('reports');
                     }}
                     className="col-span-2 py-3 bg-white border border-gray-300 text-vnpt-primary rounded-lg font-bold hover:bg-blue-50 transition-all shadow-sm"
@@ -477,7 +480,6 @@ function App() {
         pendingCount={pendingCount}
       />
       <main className="flex-1 overflow-hidden relative flex flex-col">
-         {/* Pass handleLoadAllMonths to Dashboard via renderContent -> Dashboard */}
          {activeTab === 'reports' ? (
               <Dashboard 
                 data={currentSheetData} 
@@ -495,6 +497,7 @@ function App() {
                 cacheVersion={cacheVersion}
                 initialCategory="BC"
                 onLoadAllMonths={handleLoadAllMonths}
+                isSheetNotFound={isSheetNotFound} // PASS THE NEW FLAG
                 key="dashboard-bc"
               />
          ) : renderContent()}

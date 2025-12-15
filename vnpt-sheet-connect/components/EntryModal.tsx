@@ -12,7 +12,8 @@ interface EntryModalProps {
 }
 
 const LIST_HINH_THUC = ['Online', 'Offline'];
-const LIST_DTV = ['HH', 'M'];
+// Updated: Added 'CD' option
+const LIST_DTV = ['HH', 'M', 'CD'];
 
 export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmit, sheetName, nextStt, appConfig }) => {
   const [loading, setLoading] = useState(false);
