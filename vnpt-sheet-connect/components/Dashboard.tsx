@@ -1,5 +1,4 @@
 
-// ... imports ... (Keeping existing structure)
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { SheetData, SheetRow, User, AppConfig, TableConfig } from '../types';
 import { EntryModal } from './EntryModal';
@@ -7,7 +6,6 @@ import { LeaveModal } from './LeaveModal';
 import { TableSettingsModal } from './TableSettingsModal';
 import { saveSheetRow, createMonthSheets, createNVSheets, fetchTableConfig, saveTableConfig } from '../services/sheetService';
 
-// Added 'NV' (Nghiệp vụ) to Category Type
 type SheetCategory = 'BC' | 'NV' | 'BF' | 'TH' | 'KH';
 type NghiepVuTab = 'Di động' | 'BRCĐ' | 'CNTT' | 'ONLINE';
 
@@ -27,10 +25,9 @@ interface DashboardProps {
   cacheVersion?: number;
   initialCategory?: SheetCategory;
   onLoadAllMonths?: (year: string) => Promise<void>;
-  isSheetNotFound?: boolean; // New prop indicating file is missing on backend
+  isSheetNotFound?: boolean;
 }
 
-// ... Columns and Constants definitions (Keep exactly as provided previously) ...
 const REPORT_COLUMNS = [
   'STT', 'Mã Lớp', 'Nội dung', 'Buổi', 'Ngày', 'Thứ', 'Giảng Viên', 
   'DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor', 'TTKD', 
@@ -67,7 +64,6 @@ const ALL_MONTHS = Array.from({ length: 12 }, (_, i) => {
 const currentRealYear = new Date().getFullYear();
 const YEAR_LIST = Array.from({ length: 11 }, (_, i) => currentRealYear - 5 + i);
 
-// Default Table Config
 const DEFAULT_TABLE_CONFIG: TableConfig = {
     isEnabledAlternating: false,
     alternatingColor: {
@@ -81,7 +77,6 @@ const DEFAULT_TABLE_CONFIG: TableConfig = {
     columnWidths: {}
 };
 
-// Configuration for Tabs Display
 const TABS_CONFIG: { id: SheetCategory; label: string }[] = [
   { id: 'BC', label: 'Báo Cáo' },
   { id: 'BF', label: 'Bù Phép' },
@@ -101,7 +96,7 @@ const getDaysArray = (monthStr: string, year: number) => {
 const getDayLabel = (dayStr: string, monthStr: string, year: number) => {
   try {
     const date = new Date(year, parseInt(monthStr, 10) - 1, parseInt(dayStr, 10));
-    const day = date.getDay(); // 0 = Sun
+    const day = date.getDay(); 
     const map = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
     return map[day];
   } catch {
@@ -138,8 +133,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   isSheetNotFound = false
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // --- STATE ---
   const [selectedYear, setSelectedYear] = useState<number>(currentRealYear);
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const currentMonth = new Date().getMonth() + 1;
@@ -150,7 +143,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [nvSubTab, setNvSubTab] = useState<NghiepVuTab>('Di động');
   const [isYearlyMode, setIsYearlyMode] = useState(false);
 
-  // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false); 
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
@@ -159,11 +151,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [updateTrigger, setUpdateTrigger] = useState(0); 
   
-  // Table Configuration State
   const [tableConfig, setTableConfig] = useState<TableConfig>(DEFAULT_TABLE_CONFIG);
-  const [isConfigLoading, setIsConfigLoading] = useState(false); // Changed default to false to handle initial empty state better
-  
-  // Cache for Table Configs to prevent re-fetching
+  const [isConfigLoading, setIsConfigLoading] = useState(false); 
   const configCache = useRef<Record<string, TableConfig>>({});
 
   useEffect(() => {
@@ -176,7 +165,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [activeCategory]);
   
-  // --- DERIVED STATE ---
   const targetSheetName = useMemo(() => {
     if (activeCategory === 'NV') {
         const subTabMap: Record<NghiepVuTab, string> = {
@@ -195,18 +183,24 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const paddedMonth = mInt < 10 ? `0${mInt}` : `${mInt}`;
     const unpaddedMonth = `${mInt}`;
     
-    // Logic tìm sheet: Ưu tiên có năm -> không năm -> tháng 0x -> tháng x
-    const suffixesToCheck = [
+    // Updated Logic: Ensure month is exactly matched using Regex to avoid partial matches (e.g., T1 matching T11)
+    const suffixes = [
         `-T${paddedMonth}-${yearStr}`, 
         `-T${unpaddedMonth}-${yearStr}`,
         `-T${paddedMonth}`,            
         `-T${unpaddedMonth}`           
     ];
 
-    for (const suffix of suffixesToCheck) {
+    for (const suffix of suffixes) {
         const found = availableSheets.find(name => {
             const nameUpper = name.toUpperCase();
-            return nameUpper.includes(searchType) && nameUpper.includes(suffix);
+            if (!nameUpper.includes(searchType.toUpperCase())) return false;
+            
+            // Regex to check if suffix exists and is properly bounded (by end of string or a dash)
+            // This prevents T1 from matching T11
+            const escapedSuffix = suffix.toUpperCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const regex = new RegExp(`${escapedSuffix}(\\b|$)`);
+            return regex.test(nameUpper);
         });
         if (found) return found;
     }
@@ -218,32 +212,25 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return '';
   }, [availableSheets, selectedMonth, selectedYear, activeCategory, nvSubTab, isYearlyMode]);
 
-  // Shared Config Key per Month
   const configKey = useMemo(() => {
     return `CONF_T${selectedMonth}_${selectedYear}`;
   }, [selectedMonth, selectedYear]);
 
-  // Change sheet when target changes
   useEffect(() => {
     if (targetSheetName && targetSheetName !== currentSheetName && !isYearlyMode) {
       onSheetChange(targetSheetName);
     }
   }, [targetSheetName, currentSheetName, onSheetChange, isYearlyMode]);
 
-  // --- LOAD TABLE CONFIG WITH CACHING ---
   useEffect(() => {
       let isMounted = true;
       const loadConfig = async () => {
           if (!configKey) return;
-
-          // 1. Check Cache First
           if (configCache.current[configKey]) {
               setTableConfig(configCache.current[configKey]);
               setIsConfigLoading(false);
               return;
           }
-
-          // 2. Load
           setIsConfigLoading(true);
           try {
               const cfg = await fetchTableConfig(scriptUrl, configKey);
@@ -253,15 +240,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   configCache.current[configKey] = finalConfig;
               }
           } catch (e) { 
-              console.error("Load config error", e); 
               if (isMounted) setTableConfig(DEFAULT_TABLE_CONFIG);
           } finally {
               if (isMounted) setIsConfigLoading(false);
           }
       };
-      
-      // Only load config if we are in a mode that needs it, or if we expect to show a sheet
-      // However, we load it anyway based on month/year selection so it's ready when sheet is created
       loadConfig();
       return () => { isMounted = false; };
   }, [configKey, scriptUrl]);
@@ -277,9 +260,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
   };
 
-  // --- CALCULATE STATISTICS (Kept same) ---
   const statisticsData = useMemo(() => {
-    // ... (Keep existing logic unchanged) ...
     if (activeCategory !== 'TH') return [];
     let sourceRows: SheetRow[] = [];
     if (isYearlyMode) {
@@ -288,10 +269,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
              const padded = mInt < 10 ? `0${mInt}` : `${mInt}`;
              const unpadded = `${mInt}`;
              const ySuffix = `-${selectedYear}`;
-             let sName = availableSheets.find(n => 
-                 n.includes('BC') && n.includes(ySuffix) && (n.includes(`-T${padded}`) || n.includes(`-T${unpadded}`))
-             );
-             if (!sName) sName = availableSheets.find(n => n.includes('BC') && (n.includes(`-T${padded}`) || n.includes(`-T${unpadded}`)));
+             let sName = availableSheets.find(n => {
+                 const nU = n.toUpperCase();
+                 const sffx = `-T${padded}${ySuffix}`;
+                 const sffx2 = `-T${unpadded}${ySuffix}`;
+                 return nU.includes('BC') && (nU.includes(sffx) || nU.includes(sffx2));
+             });
 
              if (sName) {
                  const sData = getDataBySheetName(sName);
@@ -320,9 +303,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
       const dtvRaw = row['ĐTV'] ? row['ĐTV'].toString().toUpperCase() : '';
       const isM = dtvRaw.includes('M');
-      // UPDATED: 'CD' is counted as 'HH' for statistics
-      const isCD = dtvRaw.includes('CD');
-      const isHH = dtvRaw.includes('HH') || isCD;
+      // Updated: 'CD' is merged into 'HH' for statistics calculation
+      const isHH = dtvRaw.includes('HH') || dtvRaw.includes('CD');
 
       const metrics = ['DĐ', 'BRCĐ', 'CNTT', 'OL', 'KN', 'Coach', 'AI Mentor'];
       let rowSumM = 0; let rowSumHH = 0; let rowSumALL = 0;
@@ -355,7 +337,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     return Object.values(statsMap).map((item: any, index) => ({ ...item, 'STT': (index + 1).toString() }));
   }, [data, activeCategory, isYearlyMode, selectedYear, availableSheets, cacheVersion]); 
-  // ... (Rest of derived logic and helper functions) ...
 
   const instructorList = useMemo(() => {
     const fromConfig = appConfig.instructors || [];
@@ -363,7 +344,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return [...new Set([...fromConfig, ...fromData])].sort();
   }, [data, appConfig]);
 
-  const canCreateMonth = user.role === 'ADMIN';
   const canAddBCData = (user.role === 'ADMIN' || user.role === 'LEADER') && (activeCategory === 'BC' || activeCategory === 'NV') && !!targetSheetName && !isSheetNotFound;
 
   const currentColumns = useMemo(() => {
@@ -376,7 +356,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [activeCategory, selectedMonth, selectedYear]);
 
   const filteredRows = useMemo(() => {
-     // ... (Keep existing filtering logic) ...
     if (activeCategory === 'TH') {
        if (!statisticsData) return [];
        return statisticsData.filter((row: any) => row['Giảng Viên'].toLowerCase().includes(searchTerm.toLowerCase()));
@@ -386,14 +365,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
        return data.rows.filter(row => Object.values(row).some((val) => String(val).toLowerCase().includes(searchTerm.toLowerCase())));
     }
     if (activeCategory === 'KH' || activeCategory === 'BF') {
-         // ... (Keep existing complex logic for KH/BF) ...
          const mInt = parseInt(selectedMonth, 10);
          const padded = mInt < 10 ? `0${mInt}` : `${mInt}`;
          const unpadded = `${mInt}`;
          
          const findSheet = (type: string) => availableSheets.find(s => {
              const upper = s.toUpperCase();
-             return (upper.includes(type)) && (upper.includes(`T${padded}`) || upper.includes(`T${unpadded}`));
+             const suffixRegex = new RegExp(`T(0?${mInt})(\\b|-)`);
+             return (upper.includes(type)) && suffixRegex.test(upper);
          });
 
          const bfName = findSheet('BF') || findSheet('BU');
@@ -462,10 +441,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return data.rows.filter(row => Object.values(row).some((val) => (val as string).toLowerCase().includes(searchTerm.toLowerCase())));
   }, [data, statisticsData, searchTerm, activeCategory, nvSubTab, targetSheetName, appConfig, updateTrigger, selectedMonth, selectedYear, availableSheets, getDataBySheetName, cacheVersion, isYearlyMode]);
 
-  // ... (Helper functions for rendering: getCellColor, getRowValue, getConditionalStyle) ...
   const getCellColor = (value: string, header: string, dayLabel?: string) => {
-    // 1. Weekends
-    if (dayLabel === 'CN' || dayLabel === 'T7') return 'bg-pink-100 text-pink-900';
+    // 1. Weekends - Updated to use VNPT Accent light blue
+    if (dayLabel === 'CN' || dayLabel === 'T7') return 'bg-vnpt-accent text-vnpt-primary';
     // 2. KH/BF Content
     if (activeCategory === 'BF' || activeCategory === 'KH') {
         const val = value?.toLowerCase().trim();
@@ -482,18 +460,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
          return 'text-blue-600';
        }
     }
-    // 4. BC weekends
+    // 4. BC weekends - Updated for consistency
     if ((activeCategory === 'BC' || activeCategory === 'NV') && (header === 'Thứ')) {
         const val = value?.trim().toLowerCase();
-        if (val === 'cn' || val === 'chủ nhật') return 'bg-pink-100 text-pink-700 font-bold';
-        if (val === 't7' || val === 'thứ 7' || val === 'thứ bảy') return 'bg-pink-100 text-pink-700 font-bold';
+        if (val === 'cn' || val === 'chủ nhật') return 'bg-vnpt-accent text-vnpt-primary font-bold';
+        if (val === 't7' || val === 'thứ 7' || val === 'thứ bảy') return 'bg-vnpt-accent text-vnpt-primary font-bold';
     }
-    
-    // 5. Numeric Values
     if (value && !isNaN(Number(value)) && Number(value) > 0 && activeCategory === 'TH') {
        return 'font-medium text-gray-900';
     }
-
     return '';
   };
 
@@ -574,9 +549,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const nextStt = (data.rows?.length || 0) + 1;
 
-  // --- RENDERERS ---
   const renderTableHeader = () => {
-     // ... (Keep existing header logic) ...
     const { headerBg, headerText } = tableConfig.alternatingColor;
     const headerStyle = { backgroundColor: headerBg, color: headerText };
 
@@ -614,7 +587,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <th rowSpan={2} className="px-4 py-2 border border-gray-300 font-bold sticky left-12 z-30 min-w-[130px] text-left border-r-2" style={headerStyle}>GIẢNG VIÊN</th>
             {days.map((day, idx) => {
                const dayLabel = getDayLabel(day, selectedMonth, selectedYear);
-               const weekendClass = (dayLabel === 'CN' || dayLabel === 'T7') ? 'text-pink-900' : '';
+               // Updated weekend header color to VNPT primary blue
+               const weekendClass = (dayLabel === 'CN' || dayLabel === 'T7') ? 'text-vnpt-primary' : '';
                return (
                  <th key={`dow-${idx}`} className={`px-1 py-1 border border-gray-300 text-sm font-bold ${weekendClass}`} style={headerStyle}>
                    {dayLabel}
@@ -625,7 +599,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <tr className="bg-gray-50 text-gray-800">
             {days.map((day, idx) => {
                const dayLabel = getDayLabel(day, selectedMonth, selectedYear);
-               const weekendClass = (dayLabel === 'CN' || dayLabel === 'T7') ? 'text-pink-900' : '';
+               // Updated weekend date color to VNPT primary blue
+               const weekendClass = (dayLabel === 'CN' || dayLabel === 'T7') ? 'text-vnpt-primary' : '';
                return (
                   <th key={`date-${idx}`} className={`px-1 py-2 border border-gray-300 text-sm font-bold ${weekendClass} min-w-[90px]`}>
                     {day}
@@ -661,7 +636,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const renderTableBody = () => {
-    // ... (Keep existing body logic) ...
     const getRowBg = (idx: number) => {
         if (tableConfig.isEnabledAlternating) {
             return idx % 2 === 0 ? tableConfig.alternatingColor.oddRowBg : tableConfig.alternatingColor.evenRowBg;
@@ -752,7 +726,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const renderContent = () => {
-      // 1. If we are refreshing data from the server, show loading
       if (isRefreshing && !isYearlyMode) {
           return (
             <div className="flex flex-col items-center justify-center h-64 space-y-4">
@@ -765,9 +738,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           );
       }
 
-      // 2. CRITICAL: If no target sheet found OR explicit Not Found flag (deleted from backend)
-      // Show CREATE BUTTON immediately.
-      // We skip 'KH' because KH can aggregate data, but for simplicity, if nothing exists, allow creation.
       if ((!targetSheetName || isSheetNotFound) && activeCategory !== 'KH' && !isYearlyMode) {
           return (
              <div className="flex flex-col items-center justify-center h-64 space-y-4">
@@ -793,7 +763,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           );
       }
 
-      // 3. If Config is Loading (and we have a sheet to show), show spinner
       if (isConfigLoading && !isYearlyMode) {
           return (
             <div className="flex flex-col items-center justify-center h-64 space-y-4">
@@ -806,7 +775,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           );
       }
 
-      // 4. Default: Show Table
       return (
         <div className="flex-1 overflow-auto bg-white custom-scrollbar relative">
             <table className="w-full text-left border-collapse min-w-max animate-[fadeIn_0.3s]">
@@ -831,7 +799,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <span>Tháng:</span><select className="bg-transparent border-none outline-none cursor-pointer" value={selectedMonth} onChange={e=>setSelectedMonth(e.target.value)}>{ALL_MONTHS.map(m=><option key={m} value={m}>{m}</option>)}</select>
                     </div>
                 )}
-                
                 {activeCategory === 'TH' && (
                    <button 
                       onClick={handleYearlyClick}
@@ -842,7 +809,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                      {isYearlyMode ? 'Xem theo Tháng' : 'Tổng cả năm'}
                    </button>
                 )}
-
                 <div className="flex items-center space-x-2">
                     {activeCategory !== 'NV' && (
                       <div className="flex space-x-1 bg-gray-100/80 p-1 rounded-lg">
@@ -859,10 +825,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     )}
                 </div>
              </div>
-
              <div className="flex items-center gap-3">
                  <input className="border p-1 rounded" placeholder="Tìm kiếm..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
-                 
                  {spreadsheetUrl && !isSheetNotFound && (
                      <a 
                         href={spreadsheetUrl} 
@@ -875,7 +839,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         Mở Sheet
                      </a>
                  )}
-
                  {user.role === 'ADMIN' && (
                      <button 
                         onClick={() => setIsTableSettingsOpen(true)}
@@ -886,7 +849,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         Table Settings
                      </button>
                  )}
-
                  {canAddBCData && <button onClick={()=>setIsModalOpen(true)} className="bg-vnpt-primary text-white px-3 py-1.5 rounded text-sm">Thêm mới</button>}
              </div>
          </div>
@@ -897,14 +859,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <EntryModal isOpen={isModalOpen} onClose={()=>setIsModalOpen(false)} onSubmit={handleSaveData} sheetName={targetSheetName} nextStt={nextStt} appConfig={appConfig} />
       <LeaveModal isOpen={isLeaveModalOpen} onClose={()=>setIsLeaveModalOpen(false)} onSubmit={handleSaveMatrix} month={selectedMonth} user={user} instructors={instructorList} />
       <LeaveModal isOpen={isPlanModalOpen} onClose={()=>setIsPlanModalOpen(false)} onSubmit={handleSaveMatrix} month={selectedMonth} user={user} instructors={instructorList} title="Nhập Kế Hoạch" />
-      
-      <TableSettingsModal 
-         isOpen={isTableSettingsOpen} 
-         onClose={() => setIsTableSettingsOpen(false)} 
-         config={tableConfig}
-         onSave={handleSaveTableConfig}
-         instructors={instructorList}
-      />
+      <TableSettingsModal isOpen={isTableSettingsOpen} onClose={() => setIsTableSettingsOpen(false)} config={tableConfig} onSave={handleSaveTableConfig} instructors={instructorList} />
     </div>
   );
 };

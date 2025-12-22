@@ -62,8 +62,6 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
     try {
       await onSubmit(formData);
       onClose();
-      // Reset logic can be handled by parent or by resetting state here if needed
-      // For now, next open will reset STT via useEffect
     } catch (err) {
       alert('Có lỗi xảy ra khi lưu dữ liệu');
     } finally {
@@ -103,10 +101,6 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
 
         {/* Body */}
         <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 md:grid-cols-12 gap-4">
-          
-          {/* Row 1: Mã Lớp (Expanded), Nội dung */}
-          {/* STT hidden from UI but exists in state */}
-          
           <div className="md:col-span-4">
             <label className={labelClass}>Mã Lớp</label>
             <select 
@@ -132,7 +126,6 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
             />
           </div>
 
-          {/* Row 2: Buổi, Ngày, Thứ, GV */}
           <div className="md:col-span-2">
             <label className={labelClass}>Buổi</label>
             <select 
@@ -179,7 +172,6 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
             </select>
           </div>
 
-          {/* Row 3: Numeric Metrics Grid */}
           <div className="md:col-span-12 border-t border-slate-600 py-4 my-2 bg-slate-800/50 rounded px-2">
             <label className="block text-xs font-bold text-blue-300 mb-3 uppercase border-l-4 border-blue-500 pl-2">Chỉ số đào tạo</label>
             <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-7 gap-2">
@@ -198,7 +190,6 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
             </div>
           </div>
 
-          {/* Row 4: Đơn vị, SL HV, Hình thức, ĐTV */}
           <div className="md:col-span-4">
             <label className={labelClass}>Đơn vị</label>
             <select 
@@ -246,7 +237,6 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
             </select>
           </div>
 
-          {/* Row 5: Màu sắc (Color Picker) */}
           <div className="md:col-span-12 flex items-center justify-end space-x-3 mt-2">
              <label className="text-xs font-bold text-gray-200 uppercase">Màu hiển thị dòng:</label>
              <div className="relative overflow-hidden rounded-md border border-slate-500 w-10 h-8">
@@ -262,7 +252,6 @@ export const EntryModal: React.FC<EntryModalProps> = ({ isOpen, onClose, onSubmi
 
         </form>
 
-        {/* Footer */}
         <div className="px-6 py-4 bg-slate-900 border-t border-slate-700 flex justify-end space-x-3 sticky bottom-0 z-10">
           <button 
             type="button" 
